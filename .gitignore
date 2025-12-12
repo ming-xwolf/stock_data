@@ -1,9 +1,247 @@
-*.csv
+# ============================================
+# Python 相关
+# ============================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.conda/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# ============================================
+# 数据库相关
+# ============================================
+# Dolt 数据库数据目录
 .dolt/
 database/dolt-data/
-database/.env
-.sqlhistory
-*.log
-*.out
+*.dolt/
+
+# SQLite 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# MySQL 相关
+*.sql.backup
+*.sql.bak
+
+# ============================================
+# 环境变量和配置
+# ============================================
 .env
-data
+.env.local
+.env.*.local
+database/.env
+*.env
+
+# 但保留示例文件
+!env.example
+!database/env.example
+!*.env.example
+
+# ============================================
+# 数据文件
+# ============================================
+# CSV 数据文件
+*.csv
+*.CSV
+
+# Excel 文件
+*.xlsx
+*.xls
+*.xlsm
+
+# 数据目录
+data/
+qlib/data/
+qlib/qlib_data/
+*.tar.gz
+*.zip
+*.gz
+
+# 但保留示例数据文件（如果有）
+!*example*.csv
+!*sample*.csv
+
+# ============================================
+# 日志文件
+# ============================================
+*.log
+*.log.*
+logs/
+*.out
+
+# ============================================
+# IDE 和编辑器
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ============================================
+# 操作系统文件
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================
+# 临时文件和备份
+# ============================================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+*.swp
+*.swo
+
+# SQL 历史记录
+.sqlhistory
+*.sqlhistory
+
+# ============================================
+# 项目特定
+# ============================================
+# 测试输出
+test_output/
+test_results/
+.pytest_cache/
+
+# 缓存文件
+.cache/
+*.cache
+
+# 备份目录
+backup/
+backups/
+*.backup
+
+# 下载的文件
+downloads/
+*.download
+
+# 压缩包（保留脚本，忽略数据包）
+qlib/data/*.tar.gz
+qlib/data/*.zip
+
+# ============================================
+# 其他
+# ============================================
+# 敏感信息
+secrets/
+*.pem
+*.key
+*.cert
+*.crt
+
+# 文档构建
+docs/_build/
+site/
+
+# 本地配置文件（如果有）
+local_config.py
+local_settings.py

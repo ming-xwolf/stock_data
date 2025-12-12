@@ -13,11 +13,14 @@
 
 set -e  # 遇到错误立即退出
 
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 配置变量
 GITHUB_REPO="chenditc/investment_data"
 QLIB_DATA_DIR="$HOME/.qlib/qlib_data/cn_data"
 BACKUP_DIR="$HOME/.qlib/backup"
-DATA_DIR="./data"
+DATA_DIR="$SCRIPT_DIR/data"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
 # 函数：获取工作日日期（如果是周末，返回上一个周五）

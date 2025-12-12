@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+"""
+更新股票扩展数据
+
+使用AKShare API获取股票的股东、行业、财务、市值等数据，并存入数据库。
+"""
+import argparse
+import logging
+import sys
+import time
+from pathlib import Path
+from datetime import datetime
+from typing import Optional, Dict, List
+
+# 添加项目根目录到Python路径
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.akshare_client import AKShareClient
+from src.db import db_manager
+from src.stock_service import StockService
+from src.industry_service import IndustryService
+from src.shareholder_service import ShareholderService
+from src.market_value_service import MarketValueService
+from src.financial_service import FinancialService
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+logger = logging.getLogger(__name__)
+
+
+def update_company_info(code: str, stock_service: StockService, basic_info: Optional[Dict] = None, 
+                        controller_info: Optional[Dict] = None) -> bool:
+    """
+    更新公司信息（企业性质、实际控制人、直接控制人、主营产品）
+    
+    Args:
+        code: 股票代码
+        stock_service: 股票服务实例
+        basic_info: 基本信息（可选，避免重复调用API）
+        controller_info: 控制人信息（可选，批量更新时传入）
+    """
+    try:
+        # 获取基本信息（企业性质、主营业务等）
+        if basic_info is None:
+            company_info = AKShareClient.get_stock_company_info(code, None)
+        else:
+            company_info = AKShareClient.get_stock_company_info(code, basic_info)
+        
+        # 获取控制人信息（如果未提供）
+        if controller_info is None:
+            controller_info = AKShareClient.get_stock_controller_info(code)
+        
+        # 合并信息，优先使用 controller_info 中的实际控制人
+        if controller_info:
+            if controller_info.get('actual_controller'):
+                company_info = company_info or {}
+                company_info['actual_controller'] = controller_info.get('actual_controller')
+            if controller_info.get('direct_controller'):
+                company_info = company_info or {}
+                company_info['direct_controller'] = controller_info.get('direct_controller')
+        
+        if company_info:
+            result = stock_service.update_company_info(
+                code=code,
+                company_type=company_info.get('company_type'),
+                actual_controller=company_info.get('actual_controller'),
+                direct_controller=company_info.get('direct_controller'),
+                main_business=company_info.get('main_business')
+            )
+            if result:
+                logger.debug(f"成功更新股票 {code} 公司信息")
+            return result
+        else:
+            logger.debug(f"股票 {code} 未获取到公司信息")
+        return False
+    except Exception as e:
+        logger.error(f"更新股票 {code} 公司信息失败: {e}", exc_info=True)
+        return False
+
+
+def batch_update_controller_info(stocks: List[Dict], stock_service: StockService) -> int:
+    """
+    批量更新控制人信息
+    
+    Args:
+        stocks: 股票列表
+        stock_service: 股票服务实例
+        
+    Returns:
+        成功更新的股票数量
+    """
+    try:
+        logger.info("批量获取所有股票的控制人信息...")
+        df = AKShareClient.get_all_controller_data()
+        if df is None or df.empty:
+            logger.warning("未获取到批量控制人数据，将使用单独更新")
+            return 0
+        
+        # 解析批量数据
+        controller_dict = AKShareClient.parse_all_controller_data(df)
+        logger.info(f"成功解析 {len(controller_dict)} 只股票的控制人信息")
+        
+        # 批量更新
+        success_count = 0
+        for stock in stocks:
+            code = stock['code']
+            controller_info = controller_dict.get(code)
+            
+            if controller_info:
+                # 只更新控制人信息，不更新其他公司信息
+                result = stock_service.update_company_info(
+                    code=code,
+                    company_type=None,
+                    actual_controller=controller_info.get('actual_controller'),
+                    direct_controller=controller_info.get('direct_controller'),
+                    main_business=None
+                )
+                if result:
+                    success_count += 1
+        
+        logger.info(f"批量更新控制人信息完成，成功更新 {success_count} 只股票")
+        return success_count
+    except Exception as e:
+        logger.error(f"批量更新控制人信息失败: {e}", exc_info=True)
+        return 0
+
+
+def batch_update_market_value(stocks: List[Dict], market_value_service: MarketValueService) -> int:
+    """
+    批量更新市值信息
+    
+    Args:
+        stocks: 股票列表
+        market_value_service: 市值服务实例
+        
+    Returns:
+        成功更新的股票数量
+    """
+    try:
+        logger.info("批量获取所有股票的市值信息...")
+        market_values = AKShareClient.get_all_market_value()
+        
+        if market_values is None or not market_values:
+            logger.warning("未获取到批量市值数据，将使用单独更新")
+            return 0
+        
+        # 转换为字典，便于查找
+        market_value_dict = {mv['code']: mv for mv in market_values}
+        logger.info(f"成功获取 {len(market_value_dict)} 只股票的市值信息")
+        
+        # 批量更新
+        success_count = 0
+        for stock in stocks:
+            code = stock['code']
+            market_value = market_value_dict.get(code)
+            
+            if market_value:
+                result = market_value_service.insert_market_value(**market_value)
+                if result:
+                    success_count += 1
+        
+        logger.info(f"批量更新市值信息完成，成功更新 {success_count} 只股票")
+        return success_count
+    except Exception as e:
+        logger.error(f"批量更新市值信息失败: {e}", exc_info=True)
+        return 0
+
+
+def update_industry_info(code: str, industry_service: IndustryService, basic_info: Optional[Dict] = None) -> bool:
+    """更新行业信息"""
+    try:
+        industry_info = AKShareClient.get_stock_industry_info(code, basic_info)
+        if industry_info:
+            industry_info['code'] = code
+            industry_info['update_date'] = datetime.now().strftime('%Y-%m-%d')
+            result = industry_service.insert_industry(**industry_info)
+            if result:
+                logger.debug(f"成功更新股票 {code} 行业信息")
+            return result
+        else:
+            logger.debug(f"股票 {code} 未获取到行业信息")
+        return False
+    except Exception as e:
+        logger.error(f"更新股票 {code} 行业信息失败: {e}", exc_info=True)
+        return False
+
+
+def update_shareholders(code: str, shareholder_service: ShareholderService) -> bool:
+    """更新股东信息"""
+    try:
+        shareholders = AKShareClient.get_stock_shareholders(code)
+        if shareholders:
+            # batch_insert_shareholders 使用 ON DUPLICATE KEY UPDATE，
+            # 会自动处理已存在的记录（更新）和新记录（插入）
+            shareholder_service.batch_insert_shareholders(shareholders)
+            logger.debug(f"成功处理股票 {code} 股东信息，共 {len(shareholders)} 条（插入或更新）")
+            return True
+        else:
+            logger.debug(f"股票 {code} 未获取到股东信息")
+        return False
+    except Exception as e:
+        logger.error(f"更新股票 {code} 股东信息失败: {e}", exc_info=True)
+        return False
+
+
+def update_market_value(code: str, market_value_service: MarketValueService) -> bool:
+    """更新市值信息"""
+    try:
+        market_value = AKShareClient.get_stock_market_value(code)
+        if market_value:
+            result = market_value_service.insert_market_value(**market_value)
+            if result:
+                logger.debug(f"成功更新股票 {code} 市值信息")
+            return result
+        else:
+            logger.debug(f"股票 {code} 未获取到市值信息")
+        return False
+    except Exception as e:
+        logger.error(f"更新股票 {code} 市值信息失败: {e}", exc_info=True)
+        return False
+
+
+def update_financial_data(code: str, financial_service: FinancialService) -> bool:
+    """更新财务数据"""
+    try:
+        financial_data = AKShareClient.get_stock_financial_data(code)
+        if not financial_data:
+            return False
+        
+        success = True
+        
+        # 更新资产负债表
+        if 'balance' in financial_data:
+            balance = financial_data['balance']
+            success &= financial_service.insert_balance_sheet(
+                code=code,
+                report_date=balance.get('report_date'),
+                total_assets=balance.get('total_assets'),
+                total_liabilities=balance.get('total_liabilities'),
+                total_equity=balance.get('total_equity'),
+            )
+        
+        # 更新利润表
+        if 'income' in financial_data:
+            income = financial_data['income']
+            success &= financial_service.insert_income_statement(
+                code=code,
+                report_date=income.get('report_date'),
+                total_revenue=income.get('total_revenue'),
+                operating_revenue=income.get('operating_revenue'),
+                net_profit=income.get('net_profit'),
+                net_profit_attributable=income.get('net_profit_attributable'),
+            )
+        
+        return success
+    except Exception as e:
+        logger.error(f"更新股票 {code} 财务数据失败: {e}")
+        return False
+
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(
+        description='更新股票扩展数据（股东、行业、财务、市值）'
+    )
+    parser.add_argument(
+        '--code',
+        type=str,
+        help='股票代码（如：000001），如果不指定则更新所有股票'
+    )
+    parser.add_argument(
+        '--data-type',
+        type=str,
+        choices=['all', 'company_info', 'industry', 'shareholders', 'market_value', 'financial'],
+        default='all',
+        help='要更新的数据类型（默认：all）'
+    )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=100,
+        help='批量处理的股票数量（默认：100）'
+    )
+    parser.add_argument(
+        '--delay',
+        type=float,
+        default=0.5,
+        help='每次API调用之间的延迟（秒，默认：0.5）'
+    )
+    parser.add_argument(
+        '--test-connection',
+        action='store_true',
+        help='仅测试数据库连接'
+    )
+    parser.add_argument(
+        '--clear-cache',
+        action='store_true',
+        help='清除所有API缓存后退出'
+    )
+    
+    args = parser.parse_args()
+    
+    # 如果指定清除缓存，则清除后退出
+    if args.clear_cache:
+        logger.info("清除所有API缓存...")
+        AKShareClient.clear_caches()
+        stats = AKShareClient.get_cache_stats()
+        logger.info(f"缓存已清除。缓存统计: {stats}")
+        return
+    
+    # 测试数据库连接
+    logger.info("测试数据库连接...")
+    if not db_manager.test_connection():
+        logger.error("数据库连接失败，请检查配置和数据库服务")
+        sys.exit(1)
+    logger.info("数据库连接成功")
+    
+    if args.test_connection:
+        logger.info("数据库连接测试通过")
+        return
+    
+    # 创建服务实例
+    stock_service = StockService()
+    industry_service = IndustryService()
+    shareholder_service = ShareholderService()
+    market_value_service = MarketValueService()
+    financial_service = FinancialService()
+    
+    # 确定要处理的股票列表
+    if args.code:
+        stock = stock_service.get_stock(args.code)
+        if not stock:
+            logger.error(f"股票 {args.code} 不存在于数据库中，请先运行 fetch_stocks.py")
+            sys.exit(1)
+        stocks = [stock]
+    else:
+        stocks = stock_service.get_all_stocks()
+        if not stocks:
+            logger.error("数据库中没有任何股票，请先运行 fetch_stocks.py")
+            sys.exit(1)
+    
+    logger.info(f"开始更新 {len(stocks)} 只股票的数据...")
+    
+    # 统计
+    stats = {
+        'company_info': 0,
+        'industry': 0,
+        'shareholders': 0,
+        'market_value': 0,
+        'financial': 0,
+        'failed': 0
+    }
+    
+    # 判断是否为批量更新（更新所有股票且数量大于1）
+    is_batch_update = args.code is None and len(stocks) > 1
+    
+    try:
+        # ========== 批量更新部分 ==========
+        if is_batch_update:
+            # 批量更新控制人信息（如果有批量API）
+            if args.data_type in ['all', 'company_info']:
+                logger.info("使用批量API更新控制人信息...")
+                batch_count = batch_update_controller_info(stocks, stock_service)
+                stats['company_info'] += batch_count
+            
+            # 批量更新市值信息（如果有批量API）
+            if args.data_type in ['all', 'market_value']:
+                logger.info("使用批量API更新市值信息...")
+                batch_count = batch_update_market_value(stocks, market_value_service)
+                stats['market_value'] += batch_count
+        
+        # ========== 单独更新部分 ==========
+        # 对于没有批量API的数据，或者单个股票更新，使用单独更新
+        for i, stock in enumerate(stocks, 1):
+            code = stock['code']
+            name = stock.get('name', '')
+            
+            logger.info(f"[{i}/{len(stocks)}] 处理股票 {code} ({name})")
+            
+            success = True
+            
+            # 如果需要更新公司信息或行业信息，一次性获取基本信息（避免重复调用）
+            basic_info = None
+            if args.data_type in ['all', 'company_info', 'industry']:
+                try:
+                    basic_info = AKShareClient.get_stock_basic_info(code)
+                    if basic_info:
+                        logger.debug(f"成功获取股票 {code} 基本信息")
+                    else:
+                        logger.warning(f"股票 {code} 未获取到基本信息")
+                    time.sleep(args.delay)  # 只在这里延迟一次
+                except Exception as e:
+                    logger.error(f"获取股票 {code} 基本信息失败: {e}")
+                    basic_info = None
+            
+            # 更新公司信息（企业性质、实际控制人、主营产品）
+            # 如果是批量更新且已批量更新了控制人信息，则只更新其他公司信息（企业性质、主营业务）
+            if args.data_type in ['all', 'company_info']:
+                # 批量更新时，控制人信息已更新，这里只更新其他信息
+                controller_info = None
+                if is_batch_update:
+                    # 尝试从批量数据中获取控制人信息（避免重复调用）
+                    try:
+                        df = AKShareClient.get_all_controller_data()
+                        if df is not None and not df.empty:
+                            controller_dict = AKShareClient.parse_all_controller_data(df)
+                            controller_info = controller_dict.get(code)
+                    except:
+                        pass
+                
+                # 如果批量更新成功，这里只更新企业性质和主营业务（如果basic_info有值）
+                if is_batch_update and controller_info:
+                    # 只更新企业性质和主营业务，控制人信息已在批量更新中处理
+                    if basic_info and (basic_info.get('company_type') or basic_info.get('main_business')):
+                        result = stock_service.update_company_info(
+                            code=code,
+                            company_type=basic_info.get('company_type'),
+                            actual_controller=None,  # 不更新，已在批量更新中处理
+                            direct_controller=None,  # 不更新，已在批量更新中处理
+                            main_business=basic_info.get('main_business')
+                        )
+                        if result:
+                            stats['company_info'] = stats.get('company_info', 0) + 1
+                        else:
+                            stats['failed'] += 1
+                            success = False
+                    # 如果basic_info为空，则不需要单独更新
+                else:
+                    # 非批量更新，使用完整更新
+                    if update_company_info(code, stock_service, basic_info, controller_info):
+                        stats['company_info'] = stats.get('company_info', 0) + 1
+                    else:
+                        stats['failed'] += 1
+                        success = False
+            
+            # 更新行业信息
+            if args.data_type in ['all', 'industry']:
+                if update_industry_info(code, industry_service, basic_info):
+                    stats['industry'] += 1
+                else:
+                    stats['failed'] += 1
+                    success = False
+            
+            # 更新股东信息
+            if args.data_type in ['all', 'shareholders']:
+                if update_shareholders(code, shareholder_service):
+                    stats['shareholders'] += 1
+                else:
+                    stats['failed'] += 1
+                    success = False
+                time.sleep(args.delay)
+            
+            # 更新市值信息
+            # 如果是批量更新且已批量更新了市值信息，则跳过
+            if args.data_type in ['all', 'market_value']:
+                # 批量更新时，市值信息已更新，这里跳过
+                if not is_batch_update:
+                    if update_market_value(code, market_value_service):
+                        stats['market_value'] += 1
+                    else:
+                        stats['failed'] += 1
+                        success = False
+                    time.sleep(args.delay)  # 添加延迟避免API限流
+            
+            # 更新财务数据
+            if args.data_type in ['all', 'financial']:
+                if update_financial_data(code, financial_service):
+                    stats['financial'] += 1
+                else:
+                    stats['failed'] += 1
+                    success = False
+                time.sleep(args.delay)
+            
+            # 批量处理时的进度提示
+            if i % args.batch_size == 0:
+                logger.info(f"已处理 {i}/{len(stocks)} 只股票")
+        
+        # 输出统计信息
+        logger.info("=" * 50)
+        logger.info("数据更新完成！")
+        if 'company_info' in stats:
+            logger.info(f"公司信息: {stats['company_info']} 只股票")
+        logger.info(f"行业信息: {stats['industry']} 只股票")
+        logger.info(f"股东信息: {stats['shareholders']} 只股票")
+        logger.info(f"市值信息: {stats['market_value']} 只股票")
+        logger.info(f"财务数据: {stats['financial']} 只股票")
+        logger.info(f"失败: {stats['failed']} 次")
+        logger.info("=" * 50)
+        
+    except KeyboardInterrupt:
+        logger.warning("用户中断操作")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"程序执行失败: {e}", exc_info=True)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
+

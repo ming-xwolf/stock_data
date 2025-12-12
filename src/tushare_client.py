@@ -59,16 +59,17 @@ class TushareClient:
     自动处理API调用频率限制：
     - Tushare API限制：
       * 免费版：每日500次，每分钟30次
-      * Pro版：每日2000次，每分钟可能更多
-    - 默认延迟设置为0.2秒（每分钟最多300次），确保不会超出限制
+      * Pro版：每日2000次，每分钟50次（日线数据接口）
+    - 默认延迟设置为1.3秒（每分钟最多约46次），确保不会超出50次/分钟的限制
     - 每次API调用后会自动等待，确保调用间隔符合限制
     """
     
     # Tushare API限制：
     # - 免费版：每日500次，每分钟30次
-    # - Pro版：每日2000次，每分钟可能更多
-    # 默认延迟设置为0.2秒（每分钟最多300次），确保不会超出限制
-    DEFAULT_API_DELAY = 0.2  # 秒
+    # - Pro版：每日2000次，每分钟50次（日线数据接口）
+    # 默认延迟设置为1.3秒（每分钟最多约46次），确保不会超出50次/分钟的限制
+    # 计算：60秒 / 50次 = 1.2秒，设置为1.3秒留有余量
+    DEFAULT_API_DELAY = 1.3  # 秒
     
     def __init__(self, api_delay: float = None):
         """
@@ -151,11 +152,18 @@ class TushareClient:
             - close: 收盘价
             - vol: 成交量（手）
             - amount: 成交额（千元）
+            - float_share: 流通股本（万股，如果API支持）
+            - turnover_rate: 换手率（%，如果API支持）
+            
+        注意：float_share和turnover_rate字段需要daily_basic接口（需要更高积分权限），
+        daily接口不支持这些字段。如果账户有权限，可以使用get_daily_basic_data方法获取。
         """
         try:
             ts_code = self.convert_code_to_ts_code(code)
             
             if fields is None:
+                # 注意：float_share和turnover_rate需要daily_basic接口（需要更高积分权限）
+                # daily接口不支持这些字段，如果账户有权限可以使用daily_basic接口获取
                 fields = 'ts_code,trade_date,open,high,low,close,vol,amount'
             
             logger.debug(f"获取股票 {code} ({ts_code}) 日线数据: {start_date} 到 {end_date}")
@@ -179,6 +187,70 @@ class TushareClient:
             
         except Exception as e:
             logger.error(f"获取股票 {code} 日线数据失败: {e}")
+            return None
+    
+    def get_daily_basic_data(
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        fields: Optional[str] = None
+    ) -> Optional[pd.DataFrame]:
+        """
+        获取日线基本面数据（包含流通股本和换手率等字段）
+        
+        注意：此接口需要更高积分权限，如果账户没有权限会返回错误。
+        
+        Args:
+            code: 股票代码（6位数字）
+            start_date: 开始日期（YYYYMMDD格式）
+            end_date: 结束日期（YYYYMMDD格式）
+            fields: 字段列表，如果为None则使用默认字段
+            
+        Returns:
+            日线基本面数据DataFrame，包含以下列：
+            - ts_code: Tushare代码
+            - trade_date: 交易日期（YYYYMMDD）
+            - float_share: 流通股本（万股）
+            - turnover_rate: 换手率（%）
+            - turnover_rate_f: 换手率（自由流通股）
+            - volume_ratio: 量比
+            - pe: 市盈率
+            - pb: 市净率
+            等更多字段
+        """
+        try:
+            ts_code = self.convert_code_to_ts_code(code)
+            
+            if fields is None:
+                fields = 'ts_code,trade_date,float_share,turnover_rate'
+            
+            logger.debug(f"获取股票 {code} ({ts_code}) 日线基本面数据: {start_date} 到 {end_date}")
+            
+            # 等待以确保不超过API调用频率限制
+            self._wait_for_rate_limit()
+            
+            df = self.pro.daily_basic(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields=fields
+            )
+            
+            if df is None or df.empty:
+                logger.warning(f"股票 {code} 未获取到基本面数据")
+                return None
+            
+            logger.debug(f"成功获取股票 {code} {len(df)} 条日线基本面数据")
+            return df
+            
+        except Exception as e:
+            error_msg = str(e)
+            if '积分' in error_msg or '权限' in error_msg or '接口访问权限' in error_msg:
+                logger.warning(f"获取股票 {code} 日线基本面数据失败: {error_msg}")
+                logger.warning("提示: daily_basic接口需要更高积分权限")
+            else:
+                logger.error(f"获取股票 {code} 日线基本面数据失败: {e}")
             return None
     
     def get_all_stock_codes(self) -> Optional[pd.DataFrame]:
@@ -229,6 +301,8 @@ class TushareClient:
             - close_price: 收盘价
             - volume: 成交量（股）
             - amount: 成交额（元）
+            - outstanding_share: 流通股本（股），如果API不支持则为None
+            - turnover: 换手率（%），如果API不支持则为None
         """
         if df is None or df.empty:
             return pd.DataFrame()
@@ -249,7 +323,9 @@ class TushareClient:
             'low': 'low_price',
             'close': 'close_price',
             'vol': 'volume',  # Tushare返回的是手，需要转换为股
-            'amount': 'amount'  # Tushare返回的是千元，需要转换为元
+            'amount': 'amount',  # Tushare返回的是千元，需要转换为元
+            'float_share': 'outstanding_share',  # 流通股本（万股），需要转换为股
+            'turnover_rate': 'turnover'  # 换手率（%）
         }
         
         result = result.rename(columns=column_mapping)
@@ -262,9 +338,22 @@ class TushareClient:
         if 'amount' in result.columns:
             result['amount'] = result['amount'] * 1000
         
+        # 转换流通股本：如果存在float_share字段（万股），转换为股
+        if 'outstanding_share' in result.columns:
+            result['outstanding_share'] = result['outstanding_share'] * 10000  # 万股 -> 股
+        else:
+            # 如果API不支持，添加空列
+            result['outstanding_share'] = None
+        
+        # 换手率：如果存在turnover_rate字段，直接使用
+        if 'turnover' not in result.columns:
+            # 如果API不支持，添加空列
+            result['turnover'] = None
+        
         # 选择需要的列
         required_columns = ['code', 'trade_date', 'open_price', 'high_price', 
-                          'low_price', 'close_price', 'volume', 'amount']
+                          'low_price', 'close_price', 'volume', 'amount',
+                          'outstanding_share', 'turnover']
         
         # 只保留存在的列
         available_columns = [col for col in required_columns if col in result.columns]

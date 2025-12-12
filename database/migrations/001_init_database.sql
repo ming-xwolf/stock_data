@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS stock_daily (
     close_price DECIMAL(10,2) COMMENT '收盘价',
     volume BIGINT COMMENT '成交量',
     amount DECIMAL(20,2) COMMENT '成交额',
+    outstanding_share BIGINT COMMENT '流通股本（股）',
+    turnover DECIMAL(10,6) COMMENT '换手率（%）',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     INDEX idx_code (code),
     INDEX idx_trade_date (trade_date),

@@ -224,6 +224,9 @@ backups/
 downloads/
 *.download
 
+# 失败的股票代码文件
+failed_codes_*.txt
+
 # 压缩包（保留脚本，忽略数据包）
 qlib/data/*.tar.gz
 qlib/data/*.zip

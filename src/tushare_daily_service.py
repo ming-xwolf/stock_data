@@ -20,16 +20,18 @@ class TushareDailyService:
     INSERT_DAILY_QUOTE_SQL = """
         INSERT INTO stock_daily (
             code, trade_date, open_price, high_price, low_price, 
-            close_price, volume, amount
+            close_price, volume, amount, outstanding_share, turnover
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             open_price = VALUES(open_price),
             high_price = VALUES(high_price),
             low_price = VALUES(low_price),
             close_price = VALUES(close_price),
             volume = VALUES(volume),
-            amount = VALUES(amount)
+            amount = VALUES(amount),
+            outstanding_share = VALUES(outstanding_share),
+            turnover = VALUES(turnover)
     """
     
     SELECT_LATEST_DATE_SQL = """
@@ -112,6 +114,15 @@ class TushareDailyService:
                 logger.warning(f"股票 {code} 未获取到数据")
                 return None
             
+            # 尝试获取daily_basic数据（包含流通股本和换手率）
+            # 注意：需要更高积分权限，如果失败则继续使用daily数据
+            basic_df = self.client.get_daily_basic_data(code, start_date, end_date)
+            if basic_df is not None and not basic_df.empty:
+                # 合并数据（trade_date格式都是YYYYMMDD字符串）
+                df = pd.merge(df, basic_df[['trade_date', 'float_share', 'turnover_rate']], 
+                            on='trade_date', how='left')
+                logger.debug(f"成功合并daily_basic数据，包含流通股本和换手率")
+            
             # 格式化数据
             formatted_df = self.client.format_daily_data_for_db(df, code)
             
@@ -153,6 +164,8 @@ class TushareDailyService:
                 close_price = float(row.get('close_price', 0)) if pd.notna(row.get('close_price')) else None
                 volume = int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
                 amount = float(row.get('amount', 0)) if pd.notna(row.get('amount')) else None
+                outstanding_share = int(row.get('outstanding_share', 0)) if pd.notna(row.get('outstanding_share')) else None
+                turnover = float(row.get('turnover', 0)) if pd.notna(row.get('turnover')) else None
                 
                 params_list.append((
                     code,
@@ -162,7 +175,9 @@ class TushareDailyService:
                     low_price,
                     close_price,
                     volume,
-                    amount
+                    amount,
+                    outstanding_share,
+                    turnover
                 ))
             
             if not params_list:
@@ -224,7 +239,8 @@ class TushareDailyService:
         codes: List[str],
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        delay: float = 1.0
+        delay: float = 0.0,
+        failed_codes_file: Optional[str] = None
     ) -> dict:
         """
         批量更新多只股票的日线数据
@@ -234,6 +250,7 @@ class TushareDailyService:
             start_date: 开始日期（YYYYMMDD格式）
             end_date: 结束日期（YYYYMMDD格式）
             delay: 每次API调用之间的延迟（秒）
+            failed_codes_file: 失败代码文件路径，如果提供则立即保存失败的代码
             
         Returns:
             统计信息字典，包含success_count, failed_count等
@@ -242,6 +259,7 @@ class TushareDailyService:
         
         success_count = 0
         failed_count = 0
+        failed_codes = []
         
         logger.info(f"开始批量更新 {len(codes)} 只股票的日线数据...")
         
@@ -255,29 +273,44 @@ class TushareDailyService:
                     success_count += 1
                 else:
                     failed_count += 1
+                    failed_codes.append(code)
+                    # 立即保存失败的代码到文件
+                    if failed_codes_file:
+                        try:
+                            with open(failed_codes_file, 'a', encoding='utf-8') as f:
+                                f.write(f"{code}\n")
+                        except Exception as save_err:
+                            logger.warning(f"保存失败代码 {code} 到文件失败: {save_err}")
                 
                 # 添加延迟，避免API限流
-                # 注意：TushareClient内部已经有默认延迟（0.2秒），这里添加额外延迟
-                # 以确保批量更新时更加保守
+                # 注意：TushareClient内部已经有默认延迟（1.3秒），确保每分钟不超过50次
+                # 这里可以添加额外延迟以进一步降低调用频率
                 if delay > 0 and i < len(codes):
-                    # 如果delay小于客户端默认延迟，使用客户端延迟
-                    # 否则使用指定的delay（减去客户端已等待的时间）
-                    client_delay = getattr(self.client, 'api_delay', 0.2)
-                    additional_delay = max(0, delay - client_delay)
-                    if additional_delay > 0:
-                        time.sleep(additional_delay)
+                    # 客户端已经有延迟，这里添加额外延迟
+                    time.sleep(delay)
                     
             except Exception as e:
                 logger.error(f"更新股票 {code} 失败: {e}")
                 failed_count += 1
+                failed_codes.append(code)
+                # 立即保存失败的代码到文件
+                if failed_codes_file:
+                    try:
+                        with open(failed_codes_file, 'a', encoding='utf-8') as f:
+                            f.write(f"{code}\n")
+                    except Exception as save_err:
+                        logger.warning(f"保存失败代码 {code} 到文件失败: {save_err}")
                 continue
         
         result = {
             'total': len(codes),
             'success_count': success_count,
-            'failed_count': failed_count
+            'failed_count': failed_count,
+            'failed_codes': failed_codes
         }
         
         logger.info(f"批量更新完成: 成功 {success_count} 只，失败 {failed_count} 只，总计 {len(codes)} 只")
+        if failed_codes:
+            logger.warning(f"失败的股票代码: {', '.join(failed_codes[:10])}{'...' if len(failed_codes) > 10 else ''}")
         
         return result

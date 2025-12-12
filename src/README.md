@@ -103,7 +103,7 @@ python src/update_stock_data.py --data-type financial
 
 更新股票日线行情数据（使用AKShare）：
 ```bash
-# 更新单只股票（从最新日期开始）
+# 更新单只股票（从最新日期开始，默认使用新浪API，包含成交量和更多字段）
 python src/update_akshare_daily.py --code 000001
 
 # 更新单只股票（指定日期范围）
@@ -112,9 +112,17 @@ python src/update_akshare_daily.py --code 000001 --start-date 20230101 --end-dat
 # 更新所有股票（从最新日期开始）
 python src/update_akshare_daily.py --all
 
-# 使用分时API获取成交量数据（速度较慢但数据完整）
+# 不使用新浪API（使用腾讯API作为备选）
+python src/update_akshare_daily.py --code 000001 --no-sina
+
+# 使用分时API获取成交量数据（如果新浪和腾讯API都失败）
 python src/update_akshare_daily.py --code 000001 --use-minute
 ```
+
+**数据字段说明**:
+- 新浪API (`stock_zh_a_daily`) 提供完整数据：成交量、成交额、流通股本、换手率
+- 腾讯API (`stock_zh_a_hist_tx`) 提供：成交额（无成交量）
+- 分时API (`stock_zh_a_hist_min_em`) 提供：成交量、成交额（需聚合）
 
 更新股票日线行情数据（使用Tushare）：
 ```bash
@@ -238,20 +246,32 @@ print(f"成功: {result['success_count']}, 失败: {result['failed_count']}")
 
 ### akshare_daily_service.py
 AKShare日线行情数据服务模块，提供：
-- `get_daily_quote_tx()`: 使用腾讯API获取日线数据
-- `get_daily_quote_from_minute()`: 使用分时API聚合日线数据
+- `get_daily_quote_sina()`: 使用新浪API获取日线数据（⭐推荐，包含成交量和更多字段）
+- `get_daily_quote_tx()`: 使用腾讯API获取日线数据（备选）
+- `get_daily_quote_from_minute()`: 使用分时API聚合日线数据（备选）
+- `get_daily_quote()`: 智能选择API获取日线数据（默认优先使用新浪API）
 - `fetch_and_save()`: 获取并保存日线数据到数据库
-- `save_daily_quote()`: 保存日线数据到数据库
+- `save_daily_quote()`: 保存日线数据到数据库（包含流通股本和换手率字段）
+
+**数据字段**:
+- 新浪API (`stock_zh_a_daily`) 返回字段：date, open, high, low, close, volume, amount, outstanding_share, turnover
+- 包含完整的OHLCV数据以及流通股本和换手率
 
 ### tushare_client.py
 Tushare数据获取客户端模块，提供：
 - `TushareClient`: Tushare API客户端类
-- `get_daily_data()`: 获取日线数据
+- `get_daily_data()`: 获取日线数据（基础字段）
+- `get_daily_basic_data()`: 获取日线基本面数据（包含流通股本和换手率，需要更高积分权限）
 - `get_all_stock_codes()`: 获取所有股票代码列表
-- `format_daily_data_for_db()`: 格式化数据为数据库格式
+- `format_daily_data_for_db()`: 格式化数据为数据库格式（支持新字段）
 - **自动延迟机制**: 每次API调用后自动延迟，避免超出API频率限制
-  - 默认延迟：0.2秒（每分钟最多300次）
+  - 默认延迟：1.3秒（每分钟最多约46次，确保不超过50次限制）
   - 支持自定义延迟时间
+
+**字段支持说明**:
+- `daily` 接口：支持基础OHLCV数据，不支持流通股本和换手率
+- `daily_basic` 接口：支持流通股本和换手率，但需要更高积分权限
+- 代码会自动尝试合并两个接口的数据，如果 `daily_basic` 无权限，新字段为 `None`
 
 ### tushare_daily_service.py
 Tushare日线数据服务模块，提供：
@@ -334,11 +354,11 @@ AKShare客户端模块，提供：
    ```
 5. **API限制**: 
    - **AKShare API**: 可能有访问频率限制，批量更新数据时请设置适当的延迟（`--delay` 参数）
-   - **Tushare API**: 
-     - 免费版：每日500次，每分钟30次
-     - Pro版：每日2000次，每分钟可能更多
-     - Tushare客户端已内置自动延迟机制（默认0.2秒），确保不会超出限制
-     - 批量更新时建议使用 `--delay 1.0` 或更长延迟
+- **Tushare API**: 
+  - 免费版：每日500次，每分钟30次
+  - Pro版：每日2000次，每分钟50次（日线数据接口）
+  - Tushare客户端已内置自动延迟机制（默认1.3秒），确保每分钟不超过50次
+  - 批量更新时默认延迟为0（客户端已控制频率），如需更保守可设置额外延迟
 6. **数据更新**: 使用 `ON DUPLICATE KEY UPDATE` 机制，重复运行不会产生重复数据
 7. **数据完整性**: 某些API可能返回不完整的数据，程序会跳过缺失字段继续处理
 8. **企业性质字段**: 企业性质可能包括：央企国资控股、地方国企、民企、外资、其他等

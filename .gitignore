@@ -1,0 +1,9 @@
+*.csv
+.dolt/
+database/dolt-data/
+database/.env
+.sqlhistory
+*.log
+*.out
+.env
+data

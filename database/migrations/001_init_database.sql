@@ -106,30 +106,7 @@ CREATE TABLE IF NOT EXISTS stock_market_value (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票市值信息表';
 
 -- ============================================
--- 6. stock_financial_balance - 股票财务数据表（资产负债表）
--- ============================================
-CREATE TABLE IF NOT EXISTS stock_financial_balance (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    code VARCHAR(10) NOT NULL COMMENT '股票代码',
-    report_date DATE NOT NULL COMMENT '报告日期',
-    report_period VARCHAR(20) COMMENT '报告期（如：2024Q1, 2024）',
-    report_type VARCHAR(20) COMMENT '报告类型（年报/中报/季报）',
-    total_assets DECIMAL(20,2) COMMENT '资产总计（元）',
-    total_liabilities DECIMAL(20,2) COMMENT '负债合计（元）',
-    total_equity DECIMAL(20,2) COMMENT '股东权益合计（元）',
-    current_assets DECIMAL(20,2) COMMENT '流动资产合计（元）',
-    non_current_assets DECIMAL(20,2) COMMENT '非流动资产合计（元）',
-    current_liabilities DECIMAL(20,2) COMMENT '流动负债合计（元）',
-    non_current_liabilities DECIMAL(20,2) COMMENT '非流动负债合计（元）',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_code (code),
-    INDEX idx_report_date (report_date),
-    UNIQUE KEY uk_code_date (code, report_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票财务数据表-资产负债表';
-
--- ============================================
--- 7. stock_financial_income - 股票财务数据表（利润表）
+-- 6. stock_financial_income - 股票财务数据表（利润表）
 -- ============================================
 CREATE TABLE IF NOT EXISTS stock_financial_income (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -154,55 +131,7 @@ CREATE TABLE IF NOT EXISTS stock_financial_income (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票财务数据表-利润表';
 
 -- ============================================
--- 8. stock_financial_cashflow - 股票财务数据表（现金流量表）
--- ============================================
-CREATE TABLE IF NOT EXISTS stock_financial_cashflow (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    code VARCHAR(10) NOT NULL COMMENT '股票代码',
-    report_date DATE NOT NULL COMMENT '报告日期',
-    report_period VARCHAR(20) COMMENT '报告期（如：2024Q1, 2024）',
-    report_type VARCHAR(20) COMMENT '报告类型（年报/中报/季报）',
-    operating_cashflow DECIMAL(20,2) COMMENT '经营活动产生的现金流量净额（元）',
-    investing_cashflow DECIMAL(20,2) COMMENT '投资活动产生的现金流量净额（元）',
-    financing_cashflow DECIMAL(20,2) COMMENT '筹资活动产生的现金流量净额（元）',
-    net_cashflow DECIMAL(20,2) COMMENT '现金及现金等价物净增加额（元）',
-    ending_cash_balance DECIMAL(20,2) COMMENT '期末现金及现金等价物余额（元）',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_code (code),
-    INDEX idx_report_date (report_date),
-    UNIQUE KEY uk_code_date (code, report_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票财务数据表-现金流量表';
-
--- ============================================
--- 9. stock_financial_indicators - 股票财务指标表
--- ============================================
-CREATE TABLE IF NOT EXISTS stock_financial_indicators (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    code VARCHAR(10) NOT NULL COMMENT '股票代码',
-    report_date DATE NOT NULL COMMENT '报告日期',
-    report_period VARCHAR(20) COMMENT '报告期（如：2024Q1, 2024）',
-    report_type VARCHAR(20) COMMENT '报告类型（年报/中报/季报）',
-    roe DECIMAL(10,4) COMMENT '净资产收益率（%）',
-    roa DECIMAL(10,4) COMMENT '总资产收益率（%）',
-    gross_profit_rate DECIMAL(10,4) COMMENT '销售毛利率（%）',
-    net_profit_rate DECIMAL(10,4) COMMENT '销售净利率（%）',
-    asset_liability_ratio DECIMAL(10,4) COMMENT '资产负债率（%）',
-    current_ratio DECIMAL(10,4) COMMENT '流动比率',
-    quick_ratio DECIMAL(10,4) COMMENT '速动比率',
-    eps DECIMAL(10,4) COMMENT '每股收益（元）',
-    bps DECIMAL(10,4) COMMENT '每股净资产（元）',
-    pe_ratio DECIMAL(10,4) COMMENT '市盈率',
-    pb_ratio DECIMAL(10,4) COMMENT '市净率',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_code (code),
-    INDEX idx_report_date (report_date),
-    UNIQUE KEY uk_code_date (code, report_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票财务指标表';
-
--- ============================================
--- 10. trading_calendar - A股交易日历表
+-- 7. trading_calendar - A股交易日历表
 -- ============================================
 CREATE TABLE IF NOT EXISTS trading_calendar (
     trade_date DATE PRIMARY KEY COMMENT '交易日期',

@@ -324,10 +324,7 @@ AKShare客户端模块，提供：
 
 ### financial_service.py
 财务数据服务模块，提供：
-- `insert_balance_sheet()`: 插入资产负债表数据
 - `insert_income_statement()`: 插入利润表数据
-- `insert_cashflow_statement()`: 插入现金流量表数据
-- `insert_indicators()`: 插入财务指标数据
 
 ### update_akshare_stock_data.py
 主程序，使用AKShare API更新股票的扩展数据（行业、股东、财务、市值）。

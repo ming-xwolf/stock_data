@@ -36,9 +36,7 @@
 | `stock_main_stock_holder()` | 股东信息 | 主API | AKShare | `akshare_client.py::get_stock_shareholders()` | ✅ 使用中 |
 | `stock_zh_a_spot_em()` | 实时行情（批量） | 主API | 东方财富 | `akshare_client.py::get_all_market_value()` | ✅ 使用中 |
 | `stock_individual_spot_xq()` | 实时行情（单只） | 备用 | 雪球 | `akshare_client.py::get_stock_market_value()` | ✅ 备用 |
-| `stock_balance_sheet_by_report_em()` | 资产负债表 | 主API | 东方财富 | `akshare_client.py::get_stock_financial_data()` | ✅ 使用中 |
 | `stock_profit_sheet_by_report_em()` | 利润表 | 主API | 东方财富 | `akshare_client.py::get_stock_financial_data()` | ✅ 使用中 |
-| `stock_cash_flow_sheet_by_report_em()` | 现金流量表 | 主API | 东方财富 | `akshare_client.py::get_stock_financial_data()` | ✅ 使用中 |
 | `stock_hold_control_cninfo()` | 实际控制人 | 主API | 巨潮资讯 | `akshare_client.py::get_stock_controller_info()` | ✅ 使用中 |
 
 ### Tushare API 使用情况
@@ -355,28 +353,7 @@ df = ak.stock_individual_spot_xq(symbol='SZ000001')
 
 ### 财务数据
 
-#### 10. `stock_balance_sheet_by_report_em(symbol)`
-
-**功能**: 获取资产负债表数据（东方财富）
-
-**参数**:
-- `symbol`: 股票代码（需要带市场标识，如 'SZ000001' 或 'SH600519'）
-
-**返回数据**: DataFrame，包含资产负债表各项数据
-
-**使用位置**: `src/akshare_client.py::get_stock_financial_data()`
-
-**代码转换**: `000001` → `SZ000001`, `600519` → `SH600519`
-
-**示例**:
-```python
-import akshare as ak
-df = ak.stock_balance_sheet_by_report_em(symbol='SZ000001')
-```
-
----
-
-#### 11. `stock_profit_sheet_by_report_em(symbol)`
+#### 10. `stock_profit_sheet_by_report_em(symbol)`
 
 **功能**: 获取利润表数据（东方财富）
 
@@ -393,27 +370,6 @@ df = ak.stock_balance_sheet_by_report_em(symbol='SZ000001')
 ```python
 import akshare as ak
 df = ak.stock_profit_sheet_by_report_em(symbol='SZ000001')
-```
-
----
-
-#### 12. `stock_cash_flow_sheet_by_report_em(symbol)`
-
-**功能**: 获取现金流量表数据（东方财富）
-
-**参数**:
-- `symbol`: 股票代码（需要带市场标识，如 'SZ000001' 或 'SH600519'）
-
-**返回数据**: DataFrame，包含现金流量表各项数据
-
-**使用位置**: `src/akshare_client.py::get_stock_financial_data()`
-
-**代码转换**: `000001` → `SZ000001`, `600519` → `SH600519`
-
-**示例**:
-```python
-import akshare as ak
-df = ak.stock_cash_flow_sheet_by_report_em(symbol='SZ000001')
 ```
 
 ---

@@ -235,32 +235,44 @@ def update_financial_data(code: str, financial_service: FinancialService) -> boo
         
         success = True
         
-        # 更新资产负债表
-        if 'balance' in financial_data:
-            balance = financial_data['balance']
-            success &= financial_service.insert_balance_sheet(
-                code=code,
-                report_date=balance.get('report_date'),
-                total_assets=balance.get('total_assets'),
-                total_liabilities=balance.get('total_liabilities'),
-                total_equity=balance.get('total_equity'),
-            )
-        
-        # 更新利润表
-        if 'income' in financial_data:
-            income = financial_data['income']
-            success &= financial_service.insert_income_statement(
-                code=code,
-                report_date=income.get('report_date'),
-                total_revenue=income.get('total_revenue'),
-                operating_revenue=income.get('operating_revenue'),
-                net_profit=income.get('net_profit'),
-                net_profit_attributable=income.get('net_profit_attributable'),
-            )
+        # 更新利润表（使用新方法获取所有报告期）
+        income_statements = AKShareClient.get_stock_income_statements(code)
+        if income_statements:
+            for income in income_statements:
+                result = financial_service.insert_income_statement(
+                    code=income.get('code'),
+                    report_date=income.get('report_date'),
+                    report_period=income.get('report_period'),
+                    report_type=income.get('report_type'),
+                    total_revenue=income.get('total_revenue'),
+                    operating_revenue=income.get('operating_revenue'),
+                    operating_cost=income.get('operating_cost'),
+                    operating_profit=income.get('operating_profit'),
+                    total_profit=income.get('total_profit'),
+                    net_profit=income.get('net_profit'),
+                    net_profit_attributable=income.get('net_profit_attributable'),
+                    basic_eps=income.get('basic_eps'),
+                    diluted_eps=income.get('diluted_eps'),
+                )
+                if not result:
+                    success = False
+            logger.debug(f"成功更新股票 {code} 的 {len(income_statements)} 期利润表数据")
+        else:
+            # 如果新方法失败，回退到旧方法（只更新最新一期）
+            if 'income' in financial_data:
+                income = financial_data['income']
+                success &= financial_service.insert_income_statement(
+                    code=code,
+                    report_date=income.get('report_date'),
+                    total_revenue=income.get('total_revenue'),
+                    operating_revenue=income.get('operating_revenue'),
+                    net_profit=income.get('net_profit'),
+                    net_profit_attributable=income.get('net_profit_attributable'),
+                )
         
         return success
     except Exception as e:
-        logger.error(f"更新股票 {code} 财务数据失败: {e}")
+        logger.error(f"更新股票 {code} 财务数据失败: {e}", exc_info=True)
         return False
 
 

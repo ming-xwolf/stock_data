@@ -579,42 +579,17 @@ class AKShareClient:
     @cached_api_call(_cache_stock_financial, ttl=86400)  # 24小时缓存
     def get_stock_financial_data(code: str, period: str = "latest") -> Optional[Dict[str, any]]:
         """
-        获取股票财务数据
+        获取股票财务数据（仅利润表）
         
         Args:
             code: 股票代码
             period: 报告期，'latest'表示最新报告期
             
         Returns:
-            财务数据字典，包含资产负债表、利润表、现金流量表数据
+            财务数据字典，包含利润表数据
         """
         try:
             financial_data = {}
-            
-            # 获取资产负债表（需要将代码转换为SH/SZ/BJ格式）
-            try:
-                # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519, 920139 -> BJ920139
-                symbol_code = AKShareClient._convert_code_to_symbol(code)
-                balance_sheet = ak.stock_balance_sheet_by_report_em(symbol=symbol_code)
-                if balance_sheet is not None and not balance_sheet.empty:
-                    # 获取最新一期的数据
-                    latest_row = balance_sheet.iloc[-1]
-                    financial_data['balance'] = {
-                        'report_date': AKShareClient._parse_date(
-                            latest_row.get('REPORT_DATE', latest_row.get('报告日期', latest_row.get('日期', '')))
-                        ),
-                        'total_assets': AKShareClient._parse_float(
-                            latest_row.get('TOTAL_ASSETS', latest_row.get('资产总计', latest_row.get('总资产', 0)))
-                        ),
-                        'total_liabilities': AKShareClient._parse_float(
-                            latest_row.get('TOTAL_LIABILITIES', latest_row.get('负债合计', latest_row.get('总负债', 0)))
-                        ),
-                        'total_equity': AKShareClient._parse_float(
-                            latest_row.get('TOTAL_EQUITY', latest_row.get('所有者权益合计', latest_row.get('股东权益', 0)))
-                        ),
-                    }
-            except Exception as e:
-                logger.debug(f"获取资产负债表失败: {e}")
             
             # 获取利润表
             try:
@@ -647,6 +622,106 @@ class AKShareClient:
             
         except Exception as e:
             logger.debug(f"获取股票 {code} 财务数据失败: {e}")
+            return None
+    
+    @staticmethod
+    @cached_api_call(_cache_stock_financial, ttl=86400)  # 24小时缓存
+    def get_stock_income_statements(code: str) -> Optional[List[Dict[str, any]]]:
+        """
+        获取股票所有报告期的利润表数据
+        
+        使用 stock_profit_sheet_by_report_em 获取所有报告期的利润表数据
+        
+        Args:
+            code: 股票代码
+            
+        Returns:
+            利润表数据列表，每个元素包含一个报告期的数据
+        """
+        try:
+            # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519, 920139 -> BJ920139
+            symbol_code = AKShareClient._convert_code_to_symbol(code)
+            income_statement_df = ak.stock_profit_sheet_by_report_em(symbol=symbol_code)
+            
+            if income_statement_df is None or income_statement_df.empty:
+                logger.debug(f"股票 {code} 未获取到利润表数据")
+                return None
+            
+            income_statements = []
+            
+            for _, row in income_statement_df.iterrows():
+                # 解析报告日期
+                report_date = AKShareClient._parse_date(
+                    row.get('REPORT_DATE', row.get('报告日期', row.get('日期', '')))
+                )
+                if not report_date:
+                    continue
+                
+                # 解析报告类型和报告期
+                report_type = row.get('REPORT_TYPE', row.get('报告类型', ''))
+                report_date_name = row.get('REPORT_DATE_NAME', row.get('报告期名称', ''))
+                
+                # 从报告日期名称中提取报告期（如：2024三季报 -> 2024Q3）
+                report_period = None
+                if report_date_name:
+                    # 尝试从报告期名称中提取年份和季度
+                    import re
+                    year_match = re.search(r'(\d{4})', str(report_date_name))
+                    if year_match:
+                        year = year_match.group(1)
+                        if '一季报' in str(report_date_name) or 'Q1' in str(report_date_name):
+                            report_period = f"{year}Q1"
+                        elif '中报' in str(report_date_name) or '半年报' in str(report_date_name) or 'Q2' in str(report_date_name):
+                            report_period = f"{year}Q2"
+                        elif '三季报' in str(report_date_name) or 'Q3' in str(report_date_name):
+                            report_period = f"{year}Q3"
+                        elif '年报' in str(report_date_name) or 'Q4' in str(report_date_name):
+                            report_period = f"{year}Q4"
+                        elif '年报' in str(report_type) or '年度' in str(report_type):
+                            report_period = year
+                
+                # 提取利润表数据
+                income_data = {
+                    'code': code,
+                    'report_date': report_date,
+                    'report_period': report_period,
+                    'report_type': str(report_type) if report_type else None,
+                    'total_revenue': AKShareClient._parse_float(
+                        row.get('OPERATE_INCOME', row.get('营业总收入', row.get('营业收入', None)))
+                    ),
+                    'operating_revenue': AKShareClient._parse_float(
+                        row.get('OPERATE_INCOME', row.get('营业收入', None))
+                    ),
+                    'operating_cost': AKShareClient._parse_float(
+                        row.get('OPERATE_EXPENSE', row.get('营业成本', row.get('营业支出', None)))
+                    ),
+                    'operating_profit': AKShareClient._parse_float(
+                        row.get('OPERATE_PROFIT', row.get('营业利润', None))
+                    ),
+                    'total_profit': AKShareClient._parse_float(
+                        row.get('TOTAL_PROFIT', row.get('利润总额', None))
+                    ),
+                    'net_profit': AKShareClient._parse_float(
+                        row.get('NETPROFIT', row.get('净利润', None))
+                    ),
+                    'net_profit_attributable': AKShareClient._parse_float(
+                        row.get('PARENT_NETPROFIT', row.get('归属于母公司所有者的净利润', row.get('归母净利润', None)))
+                    ),
+                    'basic_eps': AKShareClient._parse_float(
+                        row.get('BASIC_EPS', row.get('基本每股收益', None))
+                    ),
+                    'diluted_eps': AKShareClient._parse_float(
+                        row.get('DILUTED_EPS', row.get('稀释每股收益', None))
+                    ),
+                }
+                
+                income_statements.append(income_data)
+            
+            logger.debug(f"成功获取股票 {code} 的 {len(income_statements)} 期利润表数据")
+            return income_statements if income_statements else None
+            
+        except Exception as e:
+            logger.error(f"获取股票 {code} 利润表数据失败: {e}", exc_info=True)
             return None
     
     @staticmethod
@@ -706,14 +781,28 @@ class AKShareClient:
         if value is None:
             return None
         try:
+            # 如果是 datetime 对象，直接格式化
+            if isinstance(value, datetime):
+                return value.strftime('%Y-%m-%d')
+            
+            # 如果是 pandas Timestamp
+            if hasattr(value, 'strftime'):
+                try:
+                    return value.strftime('%Y-%m-%d')
+                except:
+                    pass
+            
             if isinstance(value, str):
                 # 尝试多种日期格式
-                for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%Y年%m月%d日']:
+                for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d', '%Y年%m月%d日']:
                     try:
                         date_obj = datetime.strptime(value, fmt)
                         return date_obj.strftime('%Y-%m-%d')
                     except ValueError:
                         continue
+                # 如果都失败，尝试直接提取日期部分（处理 '2024-12-31 00:00:00' 格式）
+                if ' ' in value:
+                    return value.split(' ')[0]
             return str(value)
         except Exception:
             return None

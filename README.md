@@ -25,8 +25,8 @@
   - ✅ 行业信息：行业名称、行业代码、概念板块、地区
   - ✅ 股东信息：前十大股东、持股比例、持股变化
   - ✅ 市值信息：总市值、流通市值、总股本、流通股本
-  - ✅ 财务数据：资产负债表、利润表、现金流量表
-  - ✅ 财务指标：ROE、ROA、毛利率、净利率等
+  - ✅ 财务数据：利润表
+    - 利润表：支持获取所有报告期的利润表数据（年报、中报、季报），包含营业收入、营业成本、营业利润、净利润、归母净利润、每股收益等完整字段
 
 - **日线行情数据获取和存储**
   - ✅ 使用AKShare获取日线行情数据（腾讯、东方财富数据源）
@@ -151,6 +151,7 @@ mysql -h 127.0.0.1 -P 13306 -u root -p -e "DROP DATABASE IF EXISTS a_stock;"
 # 然后重新执行上面的初始化步骤
 ```
 
+
 ### 4. 获取A股股票列表并存入数据库
 
 #### 安装Python依赖
@@ -210,10 +211,19 @@ python src/update_akshare_stock_data.py --data-type shareholders
 python src/update_akshare_stock_data.py --data-type market_value
 ```
 
-更新所有股票的财务数据：
+更新所有股票的财务数据（包括所有报告期的利润表数据）：
 ```bash
 python src/update_akshare_stock_data.py --data-type financial
 ```
+
+**利润表数据更新说明**：
+- 使用 `stock_profit_sheet_by_report_em` API 获取所有报告期的利润表数据
+- 自动识别报告类型（年报/中报/季报）和报告期（如：2024Q1, 2024Q2, 2024Q3, 2024Q4）
+- 支持完整字段更新，包括：
+  - 营业收入、营业成本、营业利润
+  - 利润总额、净利润、归母净利润
+  - 基本每股收益、稀释每股收益
+- 批量更新所有历史报告期数据，不只是最新一期
 
 更新所有股票的公司信息（企业性质、实际控制人、主营产品）：
 ```bash
@@ -380,7 +390,7 @@ python src/update_trading_calendar.py --check-date 2024-01-01
 
 ### AKShare（已实现）
 
-- **用途**: 获取股票列表、行业信息、日线行情数据、交易日历
+- **用途**: 获取股票列表、行业信息、日线行情数据、交易日历、财务数据
 - **数据内容**:
   - ✅ 股票列表和基本信息（已实现）
   - ✅ 日线行情数据（OHLCV、流通股本、换手率）（已实现）
@@ -388,6 +398,7 @@ python src/update_trading_calendar.py --check-date 2024-01-01
   - ✅ 股东信息（已实现）
   - ✅ 市值信息（已实现）
   - ✅ 财务数据（已实现）
+    - 利润表：使用 `stock_profit_sheet_by_report_em` API，支持所有报告期（年报/中报/季报）
   - ✅ 交易日历（已实现）
   - 行业指数数据（计划中）
 - **API限制**: 
@@ -397,6 +408,7 @@ python src/update_trading_calendar.py --check-date 2024-01-01
   - 日线数据：优先使用新浪API（`stock_zh_a_daily`），包含完整字段
   - 备选：腾讯API（`stock_zh_a_hist_tx`），不包含成交量
   - 交易日历：使用新浪API（`tool_trade_date_hist_sina`），数据范围从1990年12月19日至今
+  - 财务数据：使用东方财富API（`stock_profit_sheet_by_report_em` 等），数据完整且稳定
 
 ## 使用示例
 
@@ -440,8 +452,13 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 - `src/config.py` - 数据库配置模块
 - `src/db.py` - 数据库连接和操作模块
 - `src/akshare_client.py` - AKShare数据获取客户端
+  - `get_stock_income_statements()` - 获取所有报告期的利润表数据
+  - `get_stock_financial_data()` - 获取最新一期财务数据
 - `src/stock_service.py` - 股票数据服务模块
+- `src/financial_service.py` - 财务数据服务模块
+  - `insert_income_statement()` - 插入利润表数据
 - `src/fetch_stocks.py` - 主程序：获取股票列表并存入数据库
+- `src/update_akshare_stock_data.py` - 更新股票扩展数据（公司信息、行业、股东、市值、财务等）
 
 ## 开发计划
 
@@ -450,6 +467,7 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 - [x] 集成AKShare获取股东数据（已完成）
 - [x] 集成AKShare获取市值数据（已完成）
 - [x] 集成AKShare获取财务数据（已完成）
+  - [x] 利润表：支持获取所有报告期的利润表数据（已完成）
 - [x] 集成AKShare获取日线行情数据（已完成）
 - [x] 集成AKShare获取交易日历（已完成）
 - [x] 集成Tushare API获取日线行情数据（已完成）

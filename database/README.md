@@ -187,10 +187,7 @@ chmod +x init_dolt_db.sh
 - `stock_industry` - 股票行业信息表
 - `stock_shareholders` - 股票股东信息表
 - `stock_market_value` - 股票市值信息表
-- `stock_financial_balance` - 资产负债表
 - `stock_financial_income` - 利润表
-- `stock_financial_cashflow` - 现金流量表
-- `stock_financial_indicators` - 财务指标表
 - `trading_calendar` - A股交易日历表
 
 详细的表结构说明请参考 `migrations/001_init_database.sql`。

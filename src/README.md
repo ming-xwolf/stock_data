@@ -17,7 +17,7 @@ src/
 ├── financial_service.py       # 财务数据服务模块
 ├── akshare_daily_service.py   # AKShare日线行情数据服务模块
 ├── fetch_stocks.py            # 主程序：获取股票列表并存入数据库
-├── update_stock_data.py       # 主程序：更新股票扩展数据
+├── update_akshare_stock_data.py  # 主程序：使用AKShare更新股票扩展数据
 ├── update_akshare_daily.py    # 主程序：使用AKShare更新日线行情数据
 └── update_tushare_daily.py    # 主程序：使用Tushare更新日线行情数据
 ```
@@ -78,27 +78,27 @@ python src/fetch_stocks.py --test-connection
 
 更新单只股票的扩展数据：
 ```bash
-python src/update_stock_data.py --code 000001
+python src/update_akshare_stock_data.py --code 000001
 ```
 
 更新所有股票的行业信息：
 ```bash
-python src/update_stock_data.py --data-type industry
+python src/update_akshare_stock_data.py --data-type industry
 ```
 
 更新所有股票的股东信息：
 ```bash
-python src/update_stock_data.py --data-type shareholders
+python src/update_akshare_stock_data.py --data-type shareholders
 ```
 
 更新所有股票的市值信息：
 ```bash
-python src/update_stock_data.py --data-type market_value
+python src/update_akshare_stock_data.py --data-type market_value
 ```
 
 更新所有股票的财务数据：
 ```bash
-python src/update_stock_data.py --data-type financial
+python src/update_akshare_stock_data.py --data-type financial
 ```
 
 更新股票日线行情数据（使用AKShare）：
@@ -147,12 +147,12 @@ python src/update_tushare_daily.py --test-connection
 
 更新所有股票的公司信息（企业性质、实际控制人、主营产品）：
 ```bash
-python src/update_stock_data.py --data-type company_info
+python src/update_akshare_stock_data.py --data-type company_info
 ```
 
 更新所有股票的所有扩展数据：
 ```bash
-python src/update_stock_data.py
+python src/update_akshare_stock_data.py
 ```
 
 ### 3. 在代码中使用模块
@@ -329,8 +329,8 @@ AKShare客户端模块，提供：
 - `insert_cashflow_statement()`: 插入现金流量表数据
 - `insert_indicators()`: 插入财务指标数据
 
-### update_stock_data.py
-主程序，用于更新股票的扩展数据（行业、股东、财务、市值）。
+### update_akshare_stock_data.py
+主程序，使用AKShare API更新股票的扩展数据（行业、股东、财务、市值）。
 
 ### update_akshare_daily.py
 主程序，使用AKShare更新股票日线行情数据。

@@ -194,7 +194,7 @@ for stmt in statements:
 
 - **更新交易日历**: `python src/update_trading_calendar.py`
 - **获取股票列表**: `python src/fetch_stocks.py`
-- **更新股票数据**: `python src/update_stock_data.py`
+- **更新股票数据**: `python src/update_akshare_stock_data.py`
 - **更新日线数据**: `python src/update_akshare_daily.py` 或 `python src/update_tushare_daily.py`
 
 ## 数据库连接配置

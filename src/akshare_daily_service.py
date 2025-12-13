@@ -133,12 +133,14 @@ class DailyQuoteService:
             code: 股票代码（6位数字）
             
         Returns:
-            带市场标识的代码（如 'sz000001' 或 'sh600519'）
+            带市场标识的代码（如 'sz000001', 'sh600519', 'bj920001'）
         """
         if code.startswith(('0', '3')):
-            return f'sz{code}'  # 深圳
+            return f'sz{code}'  # 深圳证券交易所
+        elif code.startswith(('8', '92')):
+            return f'bj{code}'  # 北京证券交易所（8开头是精选层，92开头是新三板）
         else:
-            return f'sh{code}'  # 上海
+            return f'sh{code}'  # 上海证券交易所（默认）
     
     def get_daily_quote_tx(
         self,
@@ -378,6 +380,34 @@ class DailyQuoteService:
             logger.error(f"保存股票 {code} 日线数据失败: {e}", exc_info=True)
             raise
     
+    def _get_stock_list_date(self, code: str) -> Optional[str]:
+        """
+        获取股票的上市日期
+        
+        Args:
+            code: 股票代码
+            
+        Returns:
+            上市日期（YYYY-MM-DD格式），如果没有返回None
+        """
+        try:
+            results = db_manager.execute_query(
+                "SELECT list_date FROM stocks WHERE code = %s",
+                (code,)
+            )
+            if results and results[0].get('list_date'):
+                list_date = results[0]['list_date']
+                if isinstance(list_date, datetime):
+                    return list_date.strftime('%Y-%m-%d')
+                elif isinstance(list_date, str):
+                    return list_date
+                else:
+                    return str(list_date)
+            return None
+        except Exception as e:
+            logger.debug(f"查询股票 {code} 上市日期失败: {e}")
+            return None
+    
     def get_latest_date(self, code: str) -> Optional[str]:
         """
         获取股票最新的交易日期
@@ -417,7 +447,9 @@ class DailyQuoteService:
         
         Args:
             code: 股票代码
-            start_date: 开始日期 (YYYYMMDD)，如果为None则从最新日期开始
+            start_date: 开始日期 (YYYYMMDD)，如果为None则：
+                - 如果数据库中有数据：从最新日期的下一天开始
+                - 如果数据库中没有数据：从上市日期开始（如果有），否则从1990年1月1日开始获取完整历史数据
             end_date: 结束日期 (YYYYMMDD)，如果为None则使用今天
             adjust: 复权方式
             use_minute: 是否使用分时API（用于获取成交量）
@@ -435,8 +467,17 @@ class DailyQuoteService:
                     latest_dt = datetime.strptime(latest_date, '%Y-%m-%d')
                     start_date = (latest_dt + timedelta(days=1)).strftime('%Y%m%d')
                 else:
-                    # 如果没有数据，获取最近一年的数据
-                    start_date = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
+                    # 如果没有数据，尝试从股票上市日期开始，如果没有上市日期则从1990年开始
+                    # A股市场从1990年12月19日开始，使用1990年1月1日作为起始日期
+                    list_date = self._get_stock_list_date(code)
+                    if list_date:
+                        # 从上市日期开始
+                        start_date = datetime.strptime(list_date, '%Y-%m-%d').strftime('%Y%m%d')
+                        logger.info(f"股票 {code} 没有历史数据，从上市日期 {list_date} 开始获取")
+                    else:
+                        # 默认从1990年1月1日开始（A股市场开始时间）
+                        start_date = '19900101'
+                        logger.info(f"股票 {code} 没有历史数据且无上市日期，从1990年1月1日开始获取完整历史数据")
             
             # 如果没有指定结束日期，使用今天
             if end_date is None:

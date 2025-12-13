@@ -15,7 +15,7 @@
 
 - **A股股票列表获取和存储**
   - 使用AKShare API获取A股股票列表
-  - 自动识别股票市场（上海/深圳）
+  - 自动识别股票市场（上海/深圳/北京）
   - 支持获取股票上市日期
   - 批量存储到Dolt数据库
   - 支持数据更新和去重
@@ -183,41 +183,46 @@ python src/fetch_stocks.py --with-list-date
 python src/fetch_stocks.py --help
 ```
 
+**市场识别规则**：
+- 0、3开头 → SZ（深圳证券交易所）
+- 6开头 → SH（上海证券交易所）
+- 8、92开头 → BJ（北京证券交易所）
+
 ### 5. 更新股票扩展数据
 
 更新单只股票的所有扩展数据：
 ```bash
-python src/update_stock_data.py --code 000001
+python src/update_akshare_stock_data.py --code 000001
 ```
 
 更新所有股票的行业信息：
 ```bash
-python src/update_stock_data.py --data-type industry
+python src/update_akshare_stock_data.py --data-type industry
 ```
 
 更新所有股票的股东信息：
 ```bash
-python src/update_stock_data.py --data-type shareholders
+python src/update_akshare_stock_data.py --data-type shareholders
 ```
 
 更新所有股票的市值信息：
 ```bash
-python src/update_stock_data.py --data-type market_value
+python src/update_akshare_stock_data.py --data-type market_value
 ```
 
 更新所有股票的财务数据：
 ```bash
-python src/update_stock_data.py --data-type financial
+python src/update_akshare_stock_data.py --data-type financial
 ```
 
 更新所有股票的公司信息（企业性质、实际控制人、主营产品）：
 ```bash
-python src/update_stock_data.py --data-type company_info
+python src/update_akshare_stock_data.py --data-type company_info
 ```
 
 更新所有股票的所有扩展数据（推荐使用延迟避免API限制）：
 ```bash
-python src/update_stock_data.py --delay 1.0
+python src/update_akshare_stock_data.py --delay 1.0
 ```
 
 ### 6. 使用Tushare更新日线行情数据

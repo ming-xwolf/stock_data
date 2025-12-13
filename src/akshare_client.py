@@ -23,6 +23,49 @@ class AKShareClient:
     """AKShare客户端类"""
     
     @staticmethod
+    def _get_market_from_code(code: str) -> str:
+        """
+        根据股票代码判断市场
+        
+        Args:
+            code: 股票代码（6位数字）
+            
+        Returns:
+            市场代码：
+            - 0、3开头 -> SZ（深圳证券交易所）
+            - 6开头 -> SH（上海证券交易所）
+            - 8、92开头 -> BJ（北京证券交易所）
+            - 其他 -> SH（默认）
+        """
+        if code.startswith('6'):
+            return 'SH'
+        elif code.startswith(('0', '3')):
+            return 'SZ'
+        elif code.startswith(('8', '92')):
+            return 'BJ'
+        else:
+            # 如果无法判断，默认使用上海
+            return 'SH' if len(code) == 6 and code[0] == '6' else 'SZ'
+    
+    @staticmethod
+    def _convert_code_to_symbol(code: str) -> str:
+        """
+        将股票代码转换为带市场标识的格式
+        
+        Args:
+            code: 股票代码（6位数字）
+            
+        Returns:
+            带市场标识的代码：
+            - 0、3开头 -> SZ（深圳证券交易所）
+            - 6开头 -> SH（上海证券交易所）
+            - 8、92开头 -> BJ（北京证券交易所）
+            - 其他 -> SH（默认）
+        """
+        market = AKShareClient._get_market_from_code(code)
+        return f'{market}{code}'
+    
+    @staticmethod
     @cached_api_call(_cache_stock_basic_info, ttl=86400)  # 24小时缓存
     def get_stock_basic_info(code: str) -> Optional[Dict[str, any]]:
         """
@@ -94,8 +137,8 @@ class AKShareClient:
         
         # 方法2: 如果方法1失败或数据不完整，使用 stock_individual_basic_info_xq (雪球) 作为备用
         try:
-            # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519
-            symbol_code = f"{'SZ' if code.startswith(('0', '3')) else 'SH'}{code}"
+            # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519, 920139 -> BJ920139
+            symbol_code = AKShareClient._convert_code_to_symbol(code)
             basic_info_xq = ak.stock_individual_basic_info_xq(symbol=symbol_code)
             
             if basic_info_xq is not None and not basic_info_xq.empty:
@@ -119,6 +162,17 @@ class AKShareClient:
                         value = classi_row.iloc[0]['value']
                         if value and str(value) != 'None' and str(value) != 'nan' and str(value).strip():
                             basic_info['company_type'] = str(value).strip()
+                    
+                    # 如果classi_name不存在，尝试其他可能的字段名
+                    if 'company_type' not in basic_info:
+                        # 尝试查找所有包含"性质"、"类型"、"分类"等关键词的字段
+                        possible_items = basic_info_xq[
+                            basic_info_xq['item'].str.contains('性质|类型|分类|所有制', na=False, case=False)
+                        ]
+                        if not possible_items.empty:
+                            value = possible_items.iloc[0]['value']
+                            if value and str(value) != 'None' and str(value) != 'nan' and str(value).strip():
+                                basic_info['company_type'] = str(value).strip()
                 
                 # 补充缺失的实际控制人（如果actual_controller字段有值）
                 if 'actual_controller' not in basic_info:
@@ -153,6 +207,34 @@ class AKShareClient:
         except Exception as e:
             logger.debug(f"使用 stock_individual_basic_info_xq 获取股票 {code} 基本信息失败: {e}")
         
+        # 方法3: 如果企业性质仍然缺失，尝试从控制人信息推断（仅对92开头的股票）
+        if 'company_type' not in basic_info and code.startswith('92'):
+            try:
+                controller_info = AKShareClient.get_stock_controller_info(code)
+                if controller_info:
+                    actual_controller = controller_info.get('actual_controller')
+                    if actual_controller:
+                        # 根据实际控制人推断企业性质
+                        controller_str = str(actual_controller).strip()
+                        if '国务院' in controller_str or '国资委' in controller_str or '国有资产' in controller_str:
+                            basic_info['company_type'] = '央企国资控股'
+                        elif '省' in controller_str and ('国资委' in controller_str or '国有资产' in controller_str):
+                            basic_info['company_type'] = '地方国资控股'
+                        elif '市' in controller_str and ('国资委' in controller_str or '国有资产' in controller_str):
+                            basic_info['company_type'] = '地方国资控股'
+                        elif '人民政府' in controller_str:
+                            basic_info['company_type'] = '地方国资控股'
+                        elif '集体' in controller_str:
+                            basic_info['company_type'] = '集体企业'
+                        elif '外资' in controller_str or '外商' in controller_str:
+                            basic_info['company_type'] = '外资企业'
+                        else:
+                            # 默认为民企
+                            basic_info['company_type'] = '民企'
+                        logger.debug(f"从控制人信息推断股票 {code} 企业性质: {basic_info['company_type']}")
+            except Exception as e:
+                logger.debug(f"从控制人信息推断股票 {code} 企业性质失败: {e}")
+        
         return basic_info if basic_info else None
     
     @staticmethod
@@ -186,15 +268,9 @@ class AKShareClient:
                 if not code or not name:
                     continue
                 
-                # 解析市场代码（SH或SZ）
-                # 6开头是上海，0/3开头是深圳
-                if code.startswith('6'):
-                    market = 'SH'
-                elif code.startswith(('0', '3')):
-                    market = 'SZ'
-                else:
-                    # 如果无法判断，尝试从代码中提取
-                    market = 'SH' if len(code) == 6 and code[0] == '6' else 'SZ'
+                # 解析市场代码（SH/SZ/BJ）
+                # 6开头是上海，0/3开头是深圳，8/92开头是北京
+                market = AKShareClient._get_market_from_code(code)
                 
                 stocks.append({
                     'code': code,
@@ -395,8 +471,8 @@ class AKShareClient:
             市值信息字典
         """
         try:
-            # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519
-            symbol_code = f"{'SZ' if code.startswith(('0', '3')) else 'SH'}{code}"
+            # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519, 920139 -> BJ920139
+            symbol_code = AKShareClient._convert_code_to_symbol(code)
             spot_xq = ak.stock_individual_spot_xq(symbol=symbol_code)
             
             if spot_xq is not None and not spot_xq.empty:
@@ -515,10 +591,10 @@ class AKShareClient:
         try:
             financial_data = {}
             
-            # 获取资产负债表（需要将代码转换为SH/SZ格式）
+            # 获取资产负债表（需要将代码转换为SH/SZ/BJ格式）
             try:
-                # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519
-                symbol_code = f"{'SZ' if code.startswith(('0', '3')) else 'SH'}{code}"
+                # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519, 920139 -> BJ920139
+                symbol_code = AKShareClient._convert_code_to_symbol(code)
                 balance_sheet = ak.stock_balance_sheet_by_report_em(symbol=symbol_code)
                 if balance_sheet is not None and not balance_sheet.empty:
                     # 获取最新一期的数据
@@ -542,8 +618,8 @@ class AKShareClient:
             
             # 获取利润表
             try:
-                # 转换代码格式
-                symbol_code = f"{'SZ' if code.startswith(('0', '3')) else 'SH'}{code}"
+                # 转换代码格式：000001 -> SZ000001, 600519 -> SH600519, 920139 -> BJ920139
+                symbol_code = AKShareClient._convert_code_to_symbol(code)
                 income_statement = ak.stock_profit_sheet_by_report_em(symbol=symbol_code)
                 if income_statement is not None and not income_statement.empty:
                     latest_row = income_statement.iloc[-1]

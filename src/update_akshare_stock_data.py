@@ -414,9 +414,17 @@ def main():
                     except:
                         pass
                 
-                # 如果批量更新成功，这里只更新企业性质和主营业务（如果basic_info有值）
+                # 对于92开头的股票（北交所），需要特别处理企业性质更新
+                # 因为批量控制人API可能不包含这些股票，但仍需要更新企业性质
+                is_92_stock = code.startswith('92')
+                
+                # 如果批量更新成功且有控制人信息，这里只更新企业性质和主营业务
                 if is_batch_update and controller_info:
                     # 只更新企业性质和主营业务，控制人信息已在批量更新中处理
+                    if basic_info is None:
+                        # 如果basic_info为空，尝试获取基本信息
+                        basic_info = AKShareClient.get_stock_basic_info(code)
+                    
                     if basic_info and (basic_info.get('company_type') or basic_info.get('main_business')):
                         result = stock_service.update_company_info(
                             code=code,
@@ -430,7 +438,50 @@ def main():
                         else:
                             stats['failed'] += 1
                             success = False
-                    # 如果basic_info为空，则不需要单独更新
+                    # 如果basic_info仍然为空或没有企业性质，记录日志但不报错
+                    elif basic_info is None:
+                        logger.debug(f"股票 {code} 无法获取基本信息，跳过企业性质更新")
+                # 对于92开头的股票，即使批量更新时没有控制人信息，也要尝试更新企业性质和控制人信息
+                elif is_batch_update and is_92_stock:
+                    # 92开头的股票，批量控制人API可能不包含，需要单独获取控制人信息
+                    if controller_info is None:
+                        # 尝试单独获取控制人信息
+                        try:
+                            controller_info = AKShareClient.get_stock_controller_info(code)
+                        except Exception as e:
+                            logger.debug(f"获取股票 {code} (92开头) 控制人信息失败: {e}")
+                            controller_info = None
+                    
+                    if basic_info is None:
+                        # 获取基本信息（对于92开头股票，会从stock_individual_basic_info_xq获取classi_name）
+                        basic_info = AKShareClient.get_stock_basic_info(code)
+                    
+                    # 更新企业性质、主营业务和控制人信息（如果有）
+                    company_type = basic_info.get('company_type') if basic_info else None
+                    main_business = basic_info.get('main_business') if basic_info else None
+                    actual_controller = controller_info.get('actual_controller') if controller_info else None
+                    direct_controller = controller_info.get('direct_controller') if controller_info else None
+                    
+                    # 如果有任何需要更新的信息，就更新
+                    if company_type or main_business or actual_controller or direct_controller:
+                        result = stock_service.update_company_info(
+                            code=code,
+                            company_type=company_type,
+                            actual_controller=actual_controller,
+                            direct_controller=direct_controller,
+                            main_business=main_business
+                        )
+                        if result:
+                            stats['company_info'] = stats.get('company_info', 0) + 1
+                            if company_type:
+                                logger.debug(f"股票 {code} (92开头) 成功更新企业性质: {company_type}")
+                            if actual_controller or direct_controller:
+                                logger.debug(f"股票 {code} (92开头) 成功更新控制人信息")
+                        else:
+                            stats['failed'] += 1
+                            success = False
+                    else:
+                        logger.debug(f"股票 {code} (92开头) 未获取到任何公司信息，跳过更新")
                 else:
                     # 非批量更新，使用完整更新
                     if update_company_info(code, stock_service, basic_info, controller_info):

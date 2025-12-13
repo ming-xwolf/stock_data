@@ -190,7 +190,8 @@ main() {
 - stock_financial_balance: 资产负债表
 - stock_financial_income: 利润表
 - stock_financial_cashflow: 现金流量表
-- stock_financial_indicators: 财务指标表'" || {
+- stock_financial_indicators: 财务指标表
+- trading_calendar: A股交易日历表'" || {
             print_warning "提交失败，可能已经提交过"
         }
         print_success "表结构已提交到版本控制"
@@ -204,7 +205,7 @@ main() {
     sleep 2
     
     # 测试查询每个表，确保它们对 SQL Server 可见
-    TEST_TABLES=("stocks" "stock_daily" "stock_industry" "stock_shareholders" "stock_market_value")
+    TEST_TABLES=("stocks" "stock_daily" "stock_industry" "stock_shareholders" "stock_market_value" "trading_calendar")
     FAILED_TABLES=()
     
     for table in "${TEST_TABLES[@]}"; do

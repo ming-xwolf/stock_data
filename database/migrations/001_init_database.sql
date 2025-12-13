@@ -201,3 +201,13 @@ CREATE TABLE IF NOT EXISTS stock_financial_indicators (
     UNIQUE KEY uk_code_date (code, report_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='股票财务指标表';
 
+-- ============================================
+-- 10. trading_calendar - A股交易日历表
+-- ============================================
+CREATE TABLE IF NOT EXISTS trading_calendar (
+    trade_date DATE PRIMARY KEY COMMENT '交易日期',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_trade_date (trade_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='A股交易日历表';
+

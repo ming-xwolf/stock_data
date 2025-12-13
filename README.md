@@ -34,6 +34,11 @@
   - ✅ 自动检测最新日期，只获取新数据
   - ✅ 内置API频率限制保护，避免超出调用限制
 
+- **A股交易日历获取和存储**
+  - ✅ 使用AKShare获取A股交易日历
+  - ✅ 自动检测最新日期，只更新新数据
+  - ✅ 支持查询指定日期是否为交易日
+
 ### 计划功能
 
 - **数据增强**
@@ -254,7 +259,91 @@ python src/update_tushare_daily.py --all --batch-size 20 --delay 1.0
 - **数据格式**: 自动转换成交量（手→股）和成交额（千元→元）
 - **智能更新**: 自动检测数据库中的最新日期，只获取新数据
 
-### 7. 数据存储位置
+### 7. 使用AKShare更新日线行情数据
+
+AKShare提供免费的数据源，包含完整的日线行情数据（OHLCV、流通股本、换手率等）。
+
+#### 更新单只股票
+
+```bash
+# 从最新日期开始更新（自动检测数据库中的最新日期）
+python src/update_akshare_daily.py --code 000001
+
+# 指定日期范围
+python src/update_akshare_daily.py --code 000001 --start-date 20230101 --end-date 20231201
+
+# 使用后复权数据
+python src/update_akshare_daily.py --code 000001 --adjust hfq
+
+# 使用分时API获取成交量数据（如果新浪API失败）
+python src/update_akshare_daily.py --code 000001 --use-minute
+
+# 不使用新浪API（使用腾讯API作为备选）
+python src/update_akshare_daily.py --code 000001 --no-sina
+```
+
+#### 批量更新所有股票
+
+```bash
+# 从最新日期开始更新（自动跳过已是最新的股票）
+python src/update_akshare_daily.py --all
+
+# 指定日期范围
+python src/update_akshare_daily.py --all --start-date 20230101 --end-date 20231201
+
+# 自定义延迟（推荐 >= 2.0 秒以避免新浪API封IP）
+python src/update_akshare_daily.py --all --delay 2.5
+
+# 自定义批次大小和延迟
+python src/update_akshare_daily.py --all --batch-size 10 --delay 2.0
+```
+
+#### API数据源说明
+
+- **优先使用**: `stock_zh_a_daily` (新浪) - 包含完整字段（OHLCV、流通股本、换手率）
+- **备选方案**: `stock_zh_a_hist_tx` (腾讯) - 不包含成交量字段
+- **分时API**: `stock_zh_a_hist_min_em` (东方财富) - 速度较慢，但可获取成交量
+
+#### 注意事项
+
+- **API限制**: 新浪API大量抓取容易封IP，建议设置延迟 >= 2.0 秒
+- **默认延迟**: 批量更新默认延迟2.0秒，单只股票更新不需要延迟
+- **智能更新**: 自动检测数据库中的最新日期，只获取新数据
+- **自动跳过**: 批量更新时自动跳过已是最新数据的股票，减少API调用
+- **数据完整性**: 优先使用新浪API，一次调用即可获取完整数据（包含成交量、流通股本、换手率）
+- **复权方式**: 支持前复权（qfq，默认）、后复权（hfq）、不复权（空）
+
+### 8. 使用AKShare更新A股交易日历
+
+交易日历用于记录A股市场的交易日信息，可用于判断某个日期是否为交易日。
+
+#### 更新交易日历
+
+```bash
+# 智能更新（只更新新数据，推荐）
+python src/update_trading_calendar.py
+
+# 强制更新所有数据（忽略已有数据）
+python src/update_trading_calendar.py --force
+
+# 检查指定日期是否为交易日
+python src/update_trading_calendar.py --check-date 2024-01-01
+```
+
+#### 功能说明
+
+- **智能更新**: 自动检测数据库中的最新交易日，只获取新数据
+- **数据来源**: 使用AKShare的 `tool_trade_date_hist_sina` API，数据范围从1990年12月19日至今
+- **数据格式**: 交易日历表只包含交易日期，表中存在的日期就是交易日，不存在则不是交易日
+
+#### 注意事项
+
+- **数据范围**: AKShare提供的交易日历数据从1990年12月19日开始
+- **更新频率**: 建议定期更新（如每周或每月），以获取最新的交易日信息
+- **数据完整性**: 交易日历表使用 `ON DUPLICATE KEY UPDATE` 机制，重复执行不会产生重复数据
+- **表结构**: AKShare API只返回交易日，因此表中只存储交易日，不需要额外的标识字段
+
+### 9. 数据存储位置
 
 - **Qlib数据**: `~/.qlib/qlib_data/cn_data/`
 - **数据备份**: `~/.qlib/backup/`
@@ -286,11 +375,23 @@ python src/update_tushare_daily.py --all --batch-size 20 --delay 1.0
 
 ### AKShare（已实现）
 
-- **用途**: 获取股票列表、行业信息
+- **用途**: 获取股票列表、行业信息、日线行情数据、交易日历
 - **数据内容**:
   - ✅ 股票列表和基本信息（已实现）
-  - 行业分类信息（计划中）
+  - ✅ 日线行情数据（OHLCV、流通股本、换手率）（已实现）
+  - ✅ 行业分类信息（已实现）
+  - ✅ 股东信息（已实现）
+  - ✅ 市值信息（已实现）
+  - ✅ 财务数据（已实现）
+  - ✅ 交易日历（已实现）
   - 行业指数数据（计划中）
+- **API限制**: 
+  - 新浪API大量抓取容易封IP，建议延迟 >= 2.0 秒
+  - 程序已内置延迟控制机制，避免触发API限制
+- **数据源优先级**: 
+  - 日线数据：优先使用新浪API（`stock_zh_a_daily`），包含完整字段
+  - 备选：腾讯API（`stock_zh_a_hist_tx`），不包含成交量
+  - 交易日历：使用新浪API（`tool_trade_date_hist_sina`），数据范围从1990年12月19日至今
 
 ## 使用示例
 
@@ -344,6 +445,8 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 - [x] 集成AKShare获取股东数据（已完成）
 - [x] 集成AKShare获取市值数据（已完成）
 - [x] 集成AKShare获取财务数据（已完成）
+- [x] 集成AKShare获取日线行情数据（已完成）
+- [x] 集成AKShare获取交易日历（已完成）
 - [x] 集成Tushare API获取日线行情数据（已完成）
 - [ ] 集成Tushare API获取更详细的财务数据
 - [ ] 数据清洗和标准化处理

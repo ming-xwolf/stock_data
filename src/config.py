@@ -38,7 +38,7 @@ class DatabaseConfig:
     
     def __init__(self):
         """初始化数据库配置"""
-        self.host = os.getenv('DOLT_HOST', 'localhost')
+        self.host = os.getenv('DOLT_HOST', '192.168.2.37')
         self.port = int(os.getenv('DOLT_PORT', '13306'))
         self.user = os.getenv('DOLT_USER', 'root')
         self.password = os.getenv('DOLT_ROOT_PASSWORD', 'test')

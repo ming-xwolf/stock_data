@@ -227,41 +227,31 @@ def update_market_value(code: str, market_value_service: MarketValueService) -> 
 
 
 def update_financial_data(code: str, financial_service: FinancialService) -> bool:
-    """更新财务数据"""
+    """
+    更新财务数据（智能更新：如果数据已是最新则跳过API调用）
+    
+    策略：
+    1. 先检查数据库中的最新报告日期，判断数据是否已是最新
+    2. 如果数据已是最新，直接跳过API调用和数据库写入
+    3. 如果数据不是最新，调用API获取所有报告期的利润表数据
+    4. 检查数据库中是否已有这些报告期的数据
+    5. 如果已有完整数据，跳过数据库写入操作（避免重复写入）
+    6. 如果数据不完整，只插入/更新缺失的报告期数据
+    """
     try:
-        financial_data = AKShareClient.get_stock_financial_data(code)
-        if not financial_data:
-            return False
+        # 先检查数据是否已是最新（不调用API）
+        if financial_service.is_income_data_up_to_date(code):
+            logger.info(f"股票 {code} 利润表数据已是最新，跳过API调用和更新")
+            return True
         
-        success = True
-        
-        # 更新利润表（使用新方法获取所有报告期）
+        # 如果数据不是最新，调用API获取所有报告期的利润表数据
         income_statements = AKShareClient.get_stock_income_statements(code)
-        if income_statements:
-            for income in income_statements:
-                result = financial_service.insert_income_statement(
-                    code=income.get('code'),
-                    report_date=income.get('report_date'),
-                    report_period=income.get('report_period'),
-                    report_type=income.get('report_type'),
-                    total_revenue=income.get('total_revenue'),
-                    operating_revenue=income.get('operating_revenue'),
-                    operating_cost=income.get('operating_cost'),
-                    operating_profit=income.get('operating_profit'),
-                    total_profit=income.get('total_profit'),
-                    net_profit=income.get('net_profit'),
-                    net_profit_attributable=income.get('net_profit_attributable'),
-                    basic_eps=income.get('basic_eps'),
-                    diluted_eps=income.get('diluted_eps'),
-                )
-                if not result:
-                    success = False
-            logger.debug(f"成功更新股票 {code} 的 {len(income_statements)} 期利润表数据")
-        else:
-            # 如果新方法失败，回退到旧方法（只更新最新一期）
-            if 'income' in financial_data:
+        if not income_statements:
+            # 如果新方法失败，尝试使用旧方法（只更新最新一期）
+            financial_data = AKShareClient.get_stock_financial_data(code)
+            if financial_data and 'income' in financial_data:
                 income = financial_data['income']
-                success &= financial_service.insert_income_statement(
+                result = financial_service.insert_income_statement(
                     code=code,
                     report_date=income.get('report_date'),
                     total_revenue=income.get('total_revenue'),
@@ -269,6 +259,59 @@ def update_financial_data(code: str, financial_service: FinancialService) -> boo
                     net_profit=income.get('net_profit'),
                     net_profit_attributable=income.get('net_profit_attributable'),
                 )
+                return result
+            return False
+        
+        # 检查数据库中是否已有完整数据
+        if financial_service.has_complete_income_data(code, income_statements):
+            logger.info(f"股票 {code} 利润表数据已完整（共 {len(income_statements)} 期），跳过数据库写入")
+            return True
+        
+        # 获取数据库中已有的报告日期
+        db_dates = set(financial_service.get_income_statement_dates(code))
+        
+        # 只插入数据库中缺失的报告期数据
+        success = True
+        new_count = 0
+        update_count = 0
+        
+        for income in income_statements:
+            report_date = income.get('report_date')
+            if not report_date:
+                continue
+            
+            report_date_str = str(report_date)
+            
+            # 如果数据库中已有该报告日期，使用 ON DUPLICATE KEY UPDATE 更新
+            # 如果数据库中没有，则插入新数据
+            result = financial_service.insert_income_statement(
+                code=income.get('code'),
+                report_date=report_date_str,
+                report_period=income.get('report_period'),
+                report_type=income.get('report_type'),
+                total_revenue=income.get('total_revenue'),
+                operating_revenue=income.get('operating_revenue'),
+                operating_cost=income.get('operating_cost'),
+                operating_profit=income.get('operating_profit'),
+                total_profit=income.get('total_profit'),
+                net_profit=income.get('net_profit'),
+                net_profit_attributable=income.get('net_profit_attributable'),
+                basic_eps=income.get('basic_eps'),
+                diluted_eps=income.get('diluted_eps'),
+            )
+            
+            if result:
+                if report_date_str in db_dates:
+                    update_count += 1
+                else:
+                    new_count += 1
+            else:
+                success = False
+        
+        if new_count > 0 or update_count > 0:
+            logger.info(f"股票 {code} 利润表数据更新完成：新增 {new_count} 期，更新 {update_count} 期，共 {len(income_statements)} 期")
+        else:
+            logger.debug(f"股票 {code} 利润表数据无需更新")
         
         return success
     except Exception as e:
@@ -371,6 +414,30 @@ def main():
     
     # 判断是否为批量更新（更新所有股票且数量大于1）
     is_batch_update = args.code is None and len(stocks) > 1
+    
+    # 如果是批量更新财务数据，先筛选出需要更新的股票
+    stocks_to_update_financial = None
+    if is_batch_update and args.data_type in ['all', 'financial']:
+        logger.info("批量更新财务数据：筛选需要更新的股票...")
+        previous_report_date = FinancialService.get_previous_report_date()
+        logger.info(f"上一个报告期日期: {previous_report_date}")
+        
+        stocks_to_update_list = financial_service.get_stocks_without_report_date(previous_report_date)
+        if stocks_to_update_list:
+            logger.info(f"找到 {len(stocks_to_update_list)} 只股票缺少报告日期 {previous_report_date}，需要更新")
+            # 转换为集合便于快速查找
+            stocks_to_update_financial = set(stocks_to_update_list)
+            # 只保留需要更新的股票
+            stocks = [s for s in stocks if s['code'] in stocks_to_update_financial]
+            logger.info(f"将更新 {len(stocks)} 只股票的财务数据")
+        else:
+            logger.info(f"所有股票都已包含报告日期 {previous_report_date}，无需更新财务数据")
+            # 如果只更新财务数据，直接退出
+            if args.data_type == 'financial':
+                logger.info("所有股票的利润表数据已是最新，无需更新")
+                return
+            # 如果还要更新其他数据，继续执行，但跳过财务数据更新
+            stocks_to_update_financial = set()  # 空集合，表示没有股票需要更新
     
     try:
         # ========== 批量更新部分 ==========
@@ -533,12 +600,25 @@ def main():
             
             # 更新财务数据
             if args.data_type in ['all', 'financial']:
-                if update_financial_data(code, financial_service):
-                    stats['financial'] += 1
+                # 如果是批量更新且已筛选过股票，只更新筛选出的股票
+                if is_batch_update and stocks_to_update_financial is not None:
+                    if code not in stocks_to_update_financial:
+                        logger.debug(f"股票 {code} 已包含上一个报告期数据，跳过更新")
+                    else:
+                        if update_financial_data(code, financial_service):
+                            stats['financial'] += 1
+                        else:
+                            stats['failed'] += 1
+                            success = False
+                        time.sleep(args.delay)
                 else:
-                    stats['failed'] += 1
-                    success = False
-                time.sleep(args.delay)
+                    # 单个股票更新或未筛选的情况，正常更新
+                    if update_financial_data(code, financial_service):
+                        stats['financial'] += 1
+                    else:
+                        stats['failed'] += 1
+                        success = False
+                    time.sleep(args.delay)
             
             # 批量处理时的进度提示
             if i % args.batch_size == 0:

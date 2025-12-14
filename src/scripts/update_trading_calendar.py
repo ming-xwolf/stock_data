@@ -13,8 +13,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.trading_calendar_service import TradingCalendarService
-from src.db import db_manager
+from src.services.trading_calendar_service import TradingCalendarService
+from src.core.db import db_manager
 
 # 配置日志
 logging.basicConfig(

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from decimal import Decimal, ROUND_HALF_UP
 
-from .db import db_manager
+from ..core.db import db_manager
 
 logger = logging.getLogger(__name__)
 

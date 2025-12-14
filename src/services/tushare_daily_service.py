@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 import pandas as pd
 
-from .tushare_client import get_tushare_client, TushareClient
-from .db import db_manager
+from ..clients.tushare_client import get_tushare_client, TushareClient
+from ..core.db import db_manager
 
 logger = logging.getLogger(__name__)
 

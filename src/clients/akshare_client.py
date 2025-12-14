@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 from functools import lru_cache
 
 import akshare as ak
-from .cache_manager import (
+from ..core.cache_manager import (
     cached_api_call, _cache_stock_basic_info, _cache_stock_list,
     _cache_stock_controller, _cache_stock_shareholders, 
     _cache_stock_market_value, _cache_stock_financial,

@@ -16,13 +16,13 @@ from typing import Optional, Dict, List
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.akshare_client import AKShareClient
-from src.db import db_manager
-from src.stock_service import StockService
-from src.industry_service import IndustryService
-from src.shareholder_service import ShareholderService
-from src.market_value_service import MarketValueService
-from src.financial_service import FinancialService
+from src.clients.akshare_client import AKShareClient
+from src.core.db import db_manager
+from src.services.stock_service import StockService
+from src.services.industry_service import IndustryService
+from src.services.shareholder_service import ShareholderService
+from src.services.market_value_service import MarketValueService
+from src.services.financial_service import FinancialService
 
 # 配置日志
 logging.basicConfig(

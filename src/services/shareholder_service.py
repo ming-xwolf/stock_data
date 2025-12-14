@@ -6,7 +6,7 @@
 import logging
 from typing import List, Dict, Optional
 
-from .db import db_manager
+from ..core.db import db_manager
 
 logger = logging.getLogger(__name__)
 

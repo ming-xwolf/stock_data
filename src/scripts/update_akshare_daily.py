@@ -16,9 +16,9 @@ from datetime import datetime, timedelta
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.akshare_daily_service import DailyQuoteService
-from src.db import db_manager
-from src.stock_service import StockService
+from src.services.akshare_daily_service import DailyQuoteService
+from src.core.db import db_manager
+from src.services.stock_service import StockService
 
 # 配置日志
 logging.basicConfig(

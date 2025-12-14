@@ -23,8 +23,8 @@ from typing import Optional
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.limit_service import LimitService
-from src.db import db_manager
+from src.services.limit_service import LimitService
+from src.core.db import db_manager
 
 # 配置日志
 logging.basicConfig(

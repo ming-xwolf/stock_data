@@ -12,7 +12,7 @@ from typing import List, Dict, Optional
 import pandas as pd
 
 import akshare as ak
-from .db import db_manager
+from ..core.db import db_manager
 
 logger = logging.getLogger(__name__)
 

@@ -140,3 +140,65 @@ CREATE TABLE IF NOT EXISTS trading_calendar (
     INDEX idx_trade_date (trade_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='A股交易日历表';
 
+
+-- ============================================
+-- 8. etf_funds - ETF 基金基本信息表
+-- ============================================
+CREATE TABLE IF NOT EXISTS etf_funds (
+    code VARCHAR(10) PRIMARY KEY COMMENT 'ETF基金代码',
+    name VARCHAR(100) NOT NULL COMMENT 'ETF基金名称',
+    fund_type VARCHAR(50) COMMENT '基金类型（如：股票型ETF、债券型ETF等）',
+    fund_company VARCHAR(100) COMMENT '基金管理公司',
+    listing_date DATE COMMENT '上市日期',
+    tracking_index VARCHAR(100) COMMENT '跟踪指数',
+    management_fee DECIMAL(6,4) COMMENT '管理费率（%）',
+    custodian_fee DECIMAL(6,4) COMMENT '托管费率（%）',
+    exchange VARCHAR(10) COMMENT '交易所（SH/SZ）',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_name (name),
+    INDEX idx_fund_company (fund_company),
+    INDEX idx_tracking_index (tracking_index),
+    INDEX idx_exchange (exchange)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ETF基金基本信息表';
+
+-- ============================================
+-- 9. etf_daily - ETF 日线行情数据表
+-- ============================================
+CREATE TABLE IF NOT EXISTS etf_daily (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    code VARCHAR(10) NOT NULL COMMENT 'ETF基金代码',
+    trade_date DATE NOT NULL COMMENT '交易日期',
+    open_price DECIMAL(10,4) COMMENT '开盘价（元）',
+    high_price DECIMAL(10,4) COMMENT '最高价（元）',
+    low_price DECIMAL(10,4) COMMENT '最低价（元）',
+    close_price DECIMAL(10,4) COMMENT '收盘价（元）',
+    volume BIGINT COMMENT '成交量（手）',
+    amount DECIMAL(25,2) COMMENT '成交额（元）',
+    change_amount DECIMAL(10,4) COMMENT '涨跌额（元）',
+    change_rate DECIMAL(14,4) COMMENT '涨跌幅（%）',
+    turnover DECIMAL(14,4) COMMENT '换手率（%）',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX idx_code (code),
+    INDEX idx_trade_date (trade_date),
+    UNIQUE KEY uk_code_date (code, trade_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ETF日线行情数据表';
+
+-- ============================================
+-- 10. etf_net_value - ETF 净值数据表
+-- ============================================
+CREATE TABLE IF NOT EXISTS etf_net_value (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    code VARCHAR(10) NOT NULL COMMENT 'ETF基金代码',
+    net_value_date DATE NOT NULL COMMENT '净值日期',
+    unit_net_value DECIMAL(10,4) COMMENT '单位净值（元）',
+    accumulated_net_value DECIMAL(10,4) COMMENT '累计净值（元）',
+    daily_growth_rate DECIMAL(10,4) COMMENT '日增长率（%）',
+    subscription_status VARCHAR(20) COMMENT '申购状态',
+    redemption_status VARCHAR(20) COMMENT '赎回状态',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_code (code),
+    INDEX idx_net_value_date (net_value_date),
+    UNIQUE KEY uk_code_date (code, net_value_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ETF净值数据表';

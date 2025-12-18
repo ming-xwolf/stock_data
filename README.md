@@ -39,6 +39,13 @@
   - ✅ 自动检测最新日期，只更新新数据
   - ✅ 支持查询指定日期是否为交易日
 
+- **ETF（交易型开放式指数基金）数据获取和存储**
+  - ✅ ETF 基金列表获取和存储
+  - ✅ ETF 日线行情数据获取和存储（使用 AKShare）
+  - ✅ ETF 净值数据获取和存储
+  - ✅ 自动检测最新日期，只获取新数据
+  - ✅ 内置 API 频率限制保护，避免超出调用限制
+
 ### 计划功能
 
 - **数据增强**
@@ -358,7 +365,84 @@ python src/update_trading_calendar.py --check-date 2024-01-01
 - **数据完整性**: 交易日历表使用 `ON DUPLICATE KEY UPDATE` 机制，重复执行不会产生重复数据
 - **表结构**: AKShare API只返回交易日，因此表中只存储交易日，不需要额外的标识字段
 
-### 9. 数据存储位置
+### 9. 使用 AKShare 获取和更新 ETF 数据
+
+ETF（交易型开放式指数基金）是一种在交易所上市交易的开放式基金。项目支持获取 ETF 的基本信息、日线行情数据和净值数据。
+
+#### 初始化 ETF 数据库表（首次使用前）
+
+```bash
+# 使用 Docker 执行迁移脚本
+cat database/migrations/002_add_etf_tables.sql | docker exec -i stock_data_dolt dolt sql
+
+# 验证表是否创建成功
+docker exec -i stock_data_dolt dolt sql -q "USE a_stock; SHOW TABLES LIKE 'etf%';"
+```
+
+#### 获取 ETF 基金列表
+
+```bash
+# 获取所有场内 ETF 列表并存入数据库
+python -m src.scripts.fetch_etfs
+
+# 自定义批次大小
+python -m src.scripts.fetch_etfs --batch-size 100
+
+# 仅测试数据库连接
+python -m src.scripts.fetch_etfs --test-connection
+```
+
+#### 更新 ETF 日线行情数据
+
+```bash
+# 更新单只 ETF（从最新日期开始，以 510050 - 50ETF 为例）
+python -m src.scripts.update_etf_daily --code 510050
+
+# 指定日期范围
+python -m src.scripts.update_etf_daily --code 510050 --start-date 20230101 --end-date 20231201
+
+# 更新所有 ETF（从最新日期开始，自动跳过已是最新的）
+python -m src.scripts.update_etf_daily --all
+
+# 自定义延迟（推荐 >= 1.0 秒）
+python -m src.scripts.update_etf_daily --all --delay 1.5
+
+# 使用前复权数据
+python -m src.scripts.update_etf_daily --code 510050 --adjust qfq
+
+# 获取周线或月线数据
+python -m src.scripts.update_etf_daily --code 510050 --period weekly
+```
+
+#### 更新 ETF 净值数据
+
+```bash
+# 更新单只 ETF 的净值数据
+python -m src.scripts.update_etf_net_value --code 510050
+
+# 指定日期范围
+python -m src.scripts.update_etf_net_value --code 510050 --start-date 20230101 --end-date 20231201
+
+# 更新所有 ETF 的净值数据
+python -m src.scripts.update_etf_net_value --all
+
+# 自定义延迟
+python -m src.scripts.update_etf_net_value --all --delay 1.5
+```
+
+#### ETF 功能说明
+
+- **数据来源**: 使用 AKShare 的 ETF 相关 API
+  - `fund_etf_fund_daily_em`: 获取所有 ETF 实时数据和列表
+  - `fund_etf_hist_em`: 获取 ETF 历史行情数据
+  - `fund_etf_fund_info_em`: 获取 ETF 历史净值数据
+- **智能更新**: 自动检测数据库中的最新日期，只获取新数据
+- **自动跳过**: 批量更新时自动跳过已是最新数据的 ETF，减少 API 调用
+- **API 限制**: 建议设置延迟 >= 1.0 秒以避免 API 限流
+- **复权方式**: 支持前复权（qfq）、后复权（hfq）、不复权（空字符串，默认）
+- **数据周期**: 支持日线（daily）、周线（weekly）、月线（monthly）
+
+### 10. 数据存储位置
 
 - **Qlib数据**: `~/.qlib/qlib_data/cn_data/`
 - **数据备份**: `~/.qlib/backup/`
@@ -390,7 +474,7 @@ python src/update_trading_calendar.py --check-date 2024-01-01
 
 ### AKShare（已实现）
 
-- **用途**: 获取股票列表、行业信息、日线行情数据、交易日历、财务数据
+- **用途**: 获取股票列表、行业信息、日线行情数据、交易日历、财务数据、ETF 数据
 - **数据内容**:
   - ✅ 股票列表和基本信息（已实现）
   - ✅ 日线行情数据（OHLCV、流通股本、换手率）（已实现）
@@ -400,6 +484,10 @@ python src/update_trading_calendar.py --check-date 2024-01-01
   - ✅ 财务数据（已实现）
     - 利润表：使用 `stock_profit_sheet_by_report_em` API，支持所有报告期（年报/中报/季报）
   - ✅ 交易日历（已实现）
+  - ✅ ETF 数据（已实现）
+    - ETF 列表：使用 `fund_etf_fund_daily_em` API
+    - ETF 日线行情：使用 `fund_etf_hist_em` API
+    - ETF 净值数据：使用 `fund_etf_fund_info_em` API
   - 行业指数数据（计划中）
 - **API限制**: 
   - 新浪API大量抓取容易封IP，建议延迟 >= 2.0 秒

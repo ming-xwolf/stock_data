@@ -1012,4 +1012,262 @@ class AKShareClient:
         stats = get_cache_stats()
         stats['controller_data_cache'] = AKShareClient._get_all_controller_data.cache_info()
         return stats
+    
+    # ============================================
+    # ETF（交易型开放式指数基金）相关方法
+    # ============================================
+    
+    @staticmethod
+    def get_etf_list() -> List[Dict[str, any]]:
+        """
+        获取所有场内 ETF 基金列表
+        
+        使用 fund_etf_fund_daily_em 获取所有 ETF 的实时数据作为列表
+        
+        Returns:
+            ETF 列表，每个元素包含基金代码、名称等信息
+        """
+        try:
+            logger.info("开始获取 ETF 基金列表...")
+            
+            # 使用 fund_etf_fund_daily_em 获取所有 ETF 的实时数据
+            etf_df = ak.fund_etf_fund_daily_em()
+            
+            if etf_df is None or etf_df.empty:
+                logger.warning("未获取到 ETF 数据")
+                return []
+            
+            logger.info(f"成功获取 {len(etf_df)} 只 ETF")
+            
+            # 转换为字典列表
+            etfs = []
+            for _, row in etf_df.iterrows():
+                # 兼容不同的列名
+                code = str(row.get('基金代码', row.get('代码', ''))).strip()
+                name = str(row.get('基金简称', row.get('名称', ''))).strip()
+                
+                if not code or not name:
+                    continue
+                
+                # 判断交易所（6开头是上海，5开头也是上海，1开头是深圳）
+                if code.startswith(('5', '6')):
+                    exchange = 'SH'
+                elif code.startswith(('1', '3')):
+                    exchange = 'SZ'
+                else:
+                    exchange = 'SH'  # 默认上海
+                
+                etf_info = {
+                    'code': code,
+                    'name': name,
+                    'exchange': exchange,
+                    # 可选字段 - 优先使用市价，其次是最新价，最后是单位净值
+                    'close_price': AKShareClient._parse_float(
+                        row.get('市价', row.get('最新价', row.get('单位净值', None)))
+                    ),
+                    'change_rate': AKShareClient._parse_float(
+                        row.get('增长率', row.get('涨跌幅', None))
+                    ),
+                }
+                
+                etfs.append(etf_info)
+            
+            logger.info(f"成功解析 {len(etfs)} 只 ETF")
+            return etfs
+            
+        except Exception as e:
+            logger.error(f"获取 ETF 列表失败: {e}", exc_info=True)
+            raise
+    
+    @staticmethod
+    def get_etf_realtime_data(code: Optional[str] = None) -> Optional[Dict[str, any]]:
+        """
+        获取 ETF 实时数据
+        
+        Args:
+            code: ETF 代码，如果为 None 则返回所有 ETF
+            
+        Returns:
+            ETF 实时数据字典或列表
+        """
+        try:
+            # 获取所有 ETF 实时数据
+            etf_df = ak.fund_etf_fund_daily_em()
+            
+            if etf_df is None or etf_df.empty:
+                return None
+            
+            if code is None:
+                # 返回所有 ETF
+                return etf_df
+            
+            # 过滤指定代码
+            etf_data = etf_df[etf_df['代码'] == code]
+            if etf_data.empty:
+                return None
+            
+            row = etf_data.iloc[0]
+            # 兼容不同的列名
+            return {
+                'code': code,
+                'name': str(row.get('基金简称', row.get('名称', ''))),
+                'close_price': AKShareClient._parse_float(
+                    row.get('市价', row.get('最新价', row.get('单位净值', None)))
+                ),
+                'change_amount': AKShareClient._parse_float(
+                    row.get('增长值', row.get('涨跌额', None))
+                ),
+                'change_rate': AKShareClient._parse_float(
+                    row.get('增长率', row.get('涨跌幅', None))
+                ),
+                # 以下字段在 fund_etf_fund_daily_em 中可能不存在
+                'volume': AKShareClient._parse_int(row.get('成交量', None)),
+                'amount': AKShareClient._parse_float(row.get('成交额', None)),
+                'turnover': AKShareClient._parse_float(row.get('换手率', None)),
+            }
+            
+        except Exception as e:
+            logger.debug(f"获取 ETF {code} 实时数据失败: {e}")
+            return None
+    
+    @staticmethod
+    def get_etf_daily_data(code: str, period: str = "daily", 
+                          start_date: Optional[str] = None, 
+                          end_date: Optional[str] = None,
+                          adjust: str = "") -> Optional[List[Dict[str, any]]]:
+        """
+        获取 ETF 日线行情数据
+        
+        使用 fund_etf_hist_em 获取 ETF 历史行情数据
+        
+        Args:
+            code: ETF 代码
+            period: 周期，默认 "daily"（日线），也支持 "weekly", "monthly"
+            start_date: 开始日期，格式 "YYYYMMDD"
+            end_date: 结束日期，格式 "YYYYMMDD"
+            adjust: 复权类型，空字符串表示不复权，"qfq" 表示前复权，"hfq" 表示后复权
+            
+        Returns:
+            日线数据列表
+        """
+        try:
+            # 转换日期格式
+            if start_date:
+                start_date = start_date.replace('-', '')
+            else:
+                start_date = "19900101"
+            
+            if end_date:
+                end_date = end_date.replace('-', '')
+            else:
+                end_date = datetime.now().strftime('%Y%m%d')
+            
+            # 获取历史数据
+            daily_df = ak.fund_etf_hist_em(
+                symbol=code,
+                period=period,
+                start_date=start_date,
+                end_date=end_date,
+                adjust=adjust
+            )
+            
+            if daily_df is None or daily_df.empty:
+                logger.debug(f"ETF {code} 未获取到日线数据")
+                return None
+            
+            daily_data = []
+            for _, row in daily_df.iterrows():
+                trade_date = AKShareClient._parse_date(row.get('日期', ''))
+                if not trade_date:
+                    continue
+                
+                data = {
+                    'code': code,
+                    'trade_date': trade_date,
+                    'open_price': AKShareClient._parse_float(row.get('开盘', None)),
+                    'high_price': AKShareClient._parse_float(row.get('最高', None)),
+                    'low_price': AKShareClient._parse_float(row.get('最低', None)),
+                    'close_price': AKShareClient._parse_float(row.get('收盘', None)),
+                    'volume': AKShareClient._parse_int(row.get('成交量', None)),
+                    'amount': AKShareClient._parse_float(row.get('成交额', None)),
+                    'change_amount': AKShareClient._parse_float(row.get('涨跌额', None)),
+                    'change_rate': AKShareClient._parse_float(row.get('涨跌幅', None)),
+                    'turnover': AKShareClient._parse_float(row.get('换手率', None)),
+                }
+                
+                daily_data.append(data)
+            
+            logger.debug(f"成功获取 ETF {code} 的 {len(daily_data)} 条日线数据")
+            return daily_data if daily_data else None
+            
+        except Exception as e:
+            logger.error(f"获取 ETF {code} 日线数据失败: {e}", exc_info=True)
+            return None
+    
+    @staticmethod
+    def get_etf_net_value(code: str, start_date: Optional[str] = None, 
+                         end_date: Optional[str] = None) -> Optional[List[Dict[str, any]]]:
+        """
+        获取 ETF 净值数据
+        
+        使用 fund_etf_fund_info_em 获取 ETF 历史净值数据
+        
+        Args:
+            code: ETF 代码
+            start_date: 开始日期，格式 "YYYYMMDD" 或 "YYYY-MM-DD"
+            end_date: 结束日期，格式 "YYYYMMDD" 或 "YYYY-MM-DD"
+            
+        Returns:
+            净值数据列表
+        """
+        try:
+            # 转换日期格式
+            if start_date:
+                start_date = start_date.replace('-', '')
+            else:
+                start_date = "19900101"
+            
+            if end_date:
+                end_date = end_date.replace('-', '')
+            else:
+                end_date = datetime.now().strftime('%Y%m%d')
+            
+            # 获取净值数据
+            net_value_df = ak.fund_etf_fund_info_em(
+                fund=code,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if net_value_df is None or net_value_df.empty:
+                logger.debug(f"ETF {code} 未获取到净值数据")
+                return None
+            
+            net_values = []
+            for _, row in net_value_df.iterrows():
+                net_value_date = AKShareClient._parse_date(
+                    row.get('净值日期', row.get('日期', ''))
+                )
+                if not net_value_date:
+                    continue
+                
+                data = {
+                    'code': code,
+                    'net_value_date': net_value_date,
+                    'unit_net_value': AKShareClient._parse_float(row.get('单位净值', None)),
+                    'accumulated_net_value': AKShareClient._parse_float(row.get('累计净值', None)),
+                    'daily_growth_rate': AKShareClient._parse_float(row.get('日增长率', None)),
+                    'subscription_status': str(row.get('申购状态', '')).strip() if row.get('申购状态') else None,
+                    'redemption_status': str(row.get('赎回状态', '')).strip() if row.get('赎回状态') else None,
+                }
+                
+                net_values.append(data)
+            
+            logger.debug(f"成功获取 ETF {code} 的 {len(net_values)} 条净值数据")
+            return net_values if net_values else None
+            
+        except Exception as e:
+            logger.error(f"获取 ETF {code} 净值数据失败: {e}", exc_info=True)
+            return None
+
 

@@ -37,25 +37,37 @@ def update_single_etf(code: str, start_date: str = None, end_date: str = None, d
     Args:
         code: ETF 代码
         start_date: 开始日期（YYYY-MM-DD或YYYYMMDD格式）
-        end_date: 结束日期（YYYY-MM-DD或YYYYMMDD格式）
+        end_date: 结束日期（YYYY-MM-DD或YYYYMMDD格式），如果不指定则使用今天
         delay: API调用延迟（秒）
     """
     net_value_service = ETFNetValueService()
     
     logger.info(f"开始更新 ETF {code} 的净值数据...")
     
+    # 确保结束日期不超过今天
+    effective_end_date = end_date
+    if not effective_end_date:
+        effective_end_date = datetime.now().date().strftime('%Y-%m-%d')
+    else:
+        # 如果用户指定的结束日期是未来日期，限制为今天
+        end_date_obj = datetime.strptime(effective_end_date, '%Y-%m-%d').date() if '-' in effective_end_date else datetime.strptime(effective_end_date, '%Y%m%d').date()
+        today_obj = datetime.now().date()
+        if end_date_obj > today_obj:
+            effective_end_date = today_obj.strftime('%Y-%m-%d')
+            logger.info(f"结束日期限制为今天: {effective_end_date}")
+    
     # 检查是否需要更新（避免不必要的API调用）
     if start_date is None:
         latest_date = net_value_service.get_latest_date(code)
         if latest_date:
             latest_dt = datetime.strptime(latest_date, '%Y-%m-%d')
-            end_dt = datetime.now().date()
+            end_dt = datetime.strptime(effective_end_date, '%Y-%m-%d').date()
             if latest_dt.date() >= end_dt:
                 logger.info(f"✓ ETF {code} 净值已是最新数据（最新日期: {latest_date}），跳过更新")
                 return True
             # 从最新日期的下一天开始
             start_date = (latest_dt + timedelta(days=1)).strftime('%Y-%m-%d')
-            logger.info(f"从最新日期后续更新: {start_date}")
+            logger.info(f"从最新日期后续更新: {start_date} 到 {effective_end_date}")
     
     # 添加延迟（如果需要）
     if delay > 0:
@@ -66,12 +78,13 @@ def update_single_etf(code: str, start_date: str = None, end_date: str = None, d
         net_values = AKShareClient.get_etf_net_value(
             code=code,
             start_date=start_date,
-            end_date=end_date
+            end_date=effective_end_date
         )
         
         if not net_values:
-            logger.warning(f"✗ ETF {code} 未获取到净值数据")
-            return False
+            # 某些 ETF 可能确实没有净值数据（如新上市、数据源暂无数据等），这是正常情况
+            logger.debug(f"ETF {code} 在指定日期范围内未获取到净值数据（可能是新上市或数据源暂无数据）")
+            return True  # 返回 True 表示处理完成，不是错误
         
         # 批量插入数据库
         affected_rows = net_value_service.batch_insert_net_value(net_values)
@@ -79,8 +92,14 @@ def update_single_etf(code: str, start_date: str = None, end_date: str = None, d
         return True
         
     except Exception as e:
-        logger.error(f"✗ ETF {code} 净值数据更新失败: {e}")
-        return False
+        # 区分真正的错误和没有数据的情况
+        error_msg = str(e)
+        if "No objects to concatenate" in error_msg or "No data" in error_msg:
+            logger.debug(f"ETF {code} 在指定日期范围内没有净值数据（可能是新上市或数据源暂无数据）")
+            return True  # 返回 True 表示处理完成，不是错误
+        else:
+            logger.error(f"✗ ETF {code} 净值数据更新失败: {e}")
+            return False
 
 
 def update_all_etfs(start_date: str = None, end_date: str = None,
@@ -89,52 +108,78 @@ def update_all_etfs(start_date: str = None, end_date: str = None,
     批量更新所有 ETF 的净值数据
     
     优化策略：
-    1. 自动检测每只 ETF 的最新日期，只获取新数据
-    2. 跳过已是最新数据的 ETF（不调用API）
-    3. 添加延迟避免API限流
+    1. 先查看交易日历的最新交易日期（只考虑今天或今天以前）
+    2. 结合 etf_funds 表，找出 etf_net_value 中缺少最新交易日净值数据的 ETF
+    3. 只对这些需要更新的 ETF 调用 API，大幅减少 API 调用次数
+    4. 添加延迟避免API限流
     """
-    etf_service = ETFService()
+    from src.services.trading_calendar_service import TradingCalendarService
+    
     net_value_service = ETFNetValueService()
+    trading_calendar_service = TradingCalendarService()
     
-    # 获取所有 ETF 列表
-    logger.info("获取 ETF 列表...")
-    etfs = etf_service.get_all_etfs()
+    # 获取需要更新的 ETF 列表（缺少最新交易日净值数据的 ETF）
+    # SQL 查询会自动过滤掉未来的交易日，只考虑今天或今天以前的交易日
+    logger.info("查询需要更新的 ETF 列表（只考虑今天或今天以前的交易日）...")
+    etfs_need_update = net_value_service.get_etfs_need_update()
     
-    if not etfs:
-        logger.error("未获取到 ETF 列表，请先运行 fetch_etfs.py")
+    # 获取交易日历的最新交易日（用于日志显示）
+    latest_trading_date = trading_calendar_service.get_latest_trading_date()
+    if latest_trading_date:
+        logger.info(f"交易日历最新交易日: {latest_trading_date}")
+    
+    today = datetime.now().date().strftime('%Y-%m-%d')
+    logger.info(f"当前日期: {today}，只更新今天或今天以前的交易日数据")
+    
+    if not etfs_need_update:
+        logger.info("所有 ETF 净值都已是最新数据，无需更新")
         return
     
-    logger.info(f"找到 {len(etfs)} 只 ETF，开始批量更新净值数据...")
+    logger.info(f"找到 {len(etfs_need_update)} 只 ETF 需要更新")
     logger.info(f"API延迟设置: {delay} 秒")
     
     success_count = 0
     failed_count = 0
-    skipped_count = 0
     
-    for i, etf in enumerate(etfs, 1):
-        code = etf['code']
-        
-        if i % batch_size == 0:
-            logger.info(f"已处理 {i}/{len(etfs)} 只 ETF（成功: {success_count}, 失败: {failed_count}, 跳过: {skipped_count}）...")
+    start_time = time.time()
+    
+    for i, etf_info in enumerate(etfs_need_update, 1):
+        code = etf_info['code']
+        etf_latest_date = etf_info.get('latest_net_value_date')
+        suggested_start_date = etf_info.get('start_date')
         
         try:
-            # 优化：在调用API前检查是否需要更新
-            effective_start_date = start_date
-            if start_date is None:
-                latest_date = net_value_service.get_latest_date(code)
-                if latest_date:
-                    latest_dt = datetime.strptime(latest_date, '%Y-%m-%d')
-                    end_dt = datetime.now().date()
-                    if latest_dt.date() >= end_dt:
-                        skipped_count += 1
-                        continue
-                    # 从最新日期的下一天开始
-                    effective_start_date = (latest_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+            # 使用建议的起始日期，或者用户指定的起始日期
+            effective_start_date = start_date or suggested_start_date
+            
+            # 确保结束日期不超过今天
+            effective_end_date = end_date
+            if not effective_end_date:
+                effective_end_date = datetime.now().date().strftime('%Y-%m-%d')
+            else:
+                # 如果用户指定的结束日期是未来日期，限制为今天
+                end_date_obj = datetime.strptime(effective_end_date, '%Y-%m-%d').date() if '-' in effective_end_date else datetime.strptime(effective_end_date, '%Y%m%d').date()
+                today_obj = datetime.now().date()
+                if end_date_obj > today_obj:
+                    effective_end_date = today_obj.strftime('%Y-%m-%d')
+            
+            if etf_latest_date:
+                logger.info(
+                    f"ETF {code} ({etf_info.get('name', '')}): "
+                    f"数据库最新净值日期={etf_latest_date}, "
+                    f"交易日历最新日期={etf_info.get('latest_trading_date', 'N/A')}, "
+                    f"将从 {effective_start_date or '历史开始'} 更新到 {effective_end_date}"
+                )
+            else:
+                logger.info(
+                    f"ETF {code} ({etf_info.get('name', '')}): "
+                    f"数据库无净值数据，将下载完整历史数据（到 {effective_end_date}）"
+                )
             
             success = update_single_etf(
                 code=code,
                 start_date=effective_start_date,
-                end_date=end_date,
+                end_date=effective_end_date,
                 delay=delay
             )
             
@@ -146,14 +191,25 @@ def update_all_etfs(start_date: str = None, end_date: str = None,
         except Exception as e:
             logger.error(f"更新 ETF {code} 失败: {e}")
             failed_count += 1
-            continue
+        
+        # 打印进度
+        if i % batch_size == 0 or i == len(etfs_need_update):
+            elapsed = time.time() - start_time
+            avg_time = elapsed / i
+            remaining = avg_time * (len(etfs_need_update) - i)
+            remaining_str = str(timedelta(seconds=int(remaining)))
+            logger.info(
+                f"进度: {i}/{len(etfs_need_update)} ({i/len(etfs_need_update)*100:.1f}%) - "
+                f"成功: {success_count}, 失败: {failed_count} - "
+                f"预计剩余时间: {remaining_str}"
+            )
     
+    total_time = str(timedelta(seconds=int(time.time() - start_time)))
     logger.info("="*60)
-    logger.info("批量更新完成")
-    logger.info(f"成功: {success_count} 只")
+    logger.info(f"批量更新完成，耗时: {total_time}")
+    logger.info(f"成功: {success_count} 只（包括无数据的情况）")
     logger.info(f"失败: {failed_count} 只")
-    logger.info(f"跳过（已是最新）: {skipped_count} 只")
-    logger.info(f"总计: {len(etfs)} 只")
+    logger.info(f"总计需要更新: {len(etfs_need_update)} 只")
 
 
 def main():

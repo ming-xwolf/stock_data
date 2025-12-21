@@ -23,6 +23,7 @@ class ETFNetValueService:
         self.SELECT_LATEST_DATE_SQL = sql_manager.get_sql(etf_net_value_sql, 'SELECT_LATEST_DATE')
         self.SELECT_NET_VALUE_SQL = sql_manager.get_sql(etf_net_value_sql, 'SELECT_NET_VALUE')
         self.COUNT_NET_VALUE_SQL = sql_manager.get_sql(etf_net_value_sql, 'COUNT_NET_VALUE')
+        self.SELECT_ETFS_NEED_UPDATE_SQL = sql_manager.get_sql(etf_net_value_sql, 'SELECT_ETFS_NEED_UPDATE')
     
     def insert_net_value(self, data: Dict[str, any]) -> bool:
         """
@@ -154,3 +155,66 @@ class ETFNetValueService:
         except Exception as e:
             logger.error(f"统计 ETF {code} 净值数据失败: {e}")
             return 0
+    
+    def get_etfs_need_update(self) -> List[Dict[str, any]]:
+        """
+        获取需要更新的 ETF 列表（缺少最新交易日净值数据的 ETF）
+        
+        该方法会：
+        1. 查询交易日历的最新交易日（只考虑今天或今天以前）
+        2. 结合 etf_funds 表，找出 etf_net_value 中缺少最新交易日净值数据的 ETF
+        3. 返回需要更新的 ETF 列表，包含建议的起始日期
+        
+        Returns:
+            需要更新的 ETF 列表，每个元素包含：
+            - code: ETF 代码
+            - name: ETF 名称
+            - latest_net_value_date: 该 ETF 在数据库中的最新净值日期
+            - latest_trading_date: 交易日历中的最新交易日
+            - start_date: 建议的更新起始日期（从该 ETF 最新净值日期的下一天开始）
+        """
+        try:
+            results = db_manager.execute_query(self.SELECT_ETFS_NEED_UPDATE_SQL)
+            
+            # 转换日期格式
+            etfs_need_update = []
+            for row in results:
+                etf_info = {
+                    'code': row['code'],
+                    'name': row.get('name', ''),
+                    'latest_net_value_date': None,
+                    'latest_trading_date': None,
+                    'start_date': None
+                }
+                
+                # 转换 latest_net_value_date
+                if row.get('latest_net_value_date'):
+                    latest_net_value = row['latest_net_value_date']
+                    if isinstance(latest_net_value, datetime):
+                        etf_info['latest_net_value_date'] = latest_net_value.strftime('%Y-%m-%d')
+                    else:
+                        etf_info['latest_net_value_date'] = str(latest_net_value)
+                
+                # 转换 latest_trading_date
+                if row.get('latest_trading_date'):
+                    latest_trading = row['latest_trading_date']
+                    if isinstance(latest_trading, datetime):
+                        etf_info['latest_trading_date'] = latest_trading.strftime('%Y-%m-%d')
+                    else:
+                        etf_info['latest_trading_date'] = str(latest_trading)
+                
+                # 转换 start_date
+                if row.get('start_date'):
+                    start = row['start_date']
+                    if isinstance(start, datetime):
+                        etf_info['start_date'] = start.strftime('%Y-%m-%d')
+                    else:
+                        etf_info['start_date'] = str(start)
+                
+                etfs_need_update.append(etf_info)
+            
+            return etfs_need_update
+            
+        except Exception as e:
+            logger.error(f"查询需要更新的 ETF 列表失败: {e}", exc_info=True)
+            return []

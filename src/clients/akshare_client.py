@@ -1266,8 +1266,20 @@ class AKShareClient:
             logger.debug(f"成功获取 ETF {code} 的 {len(net_values)} 条净值数据")
             return net_values if net_values else None
             
+        except ValueError as e:
+            # "No objects to concatenate" 通常表示该 ETF 在指定日期范围内没有净值数据
+            if "No objects to concatenate" in str(e):
+                logger.debug(f"ETF {code} 在指定日期范围内没有净值数据（可能是新上市或数据源暂无数据）")
+            else:
+                logger.warning(f"获取 ETF {code} 净值数据时发生值错误: {e}")
+            return None
         except Exception as e:
-            logger.error(f"获取 ETF {code} 净值数据失败: {e}", exc_info=True)
+            # 其他异常使用 WARNING 级别，避免产生过多错误日志
+            error_msg = str(e)
+            if "No objects to concatenate" in error_msg or "No data" in error_msg:
+                logger.debug(f"ETF {code} 在指定日期范围内没有净值数据")
+            else:
+                logger.warning(f"获取 ETF {code} 净值数据失败: {e}")
             return None
 
 

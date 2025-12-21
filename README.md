@@ -17,7 +17,7 @@
   - 使用AKShare API获取A股股票列表
   - 自动识别股票市场（上海/深圳/北京）
   - 支持获取股票上市日期
-  - 批量存储到Dolt数据库
+  - 批量存储到Supabase数据库
   - 支持数据更新和去重
 
 - **股票扩展数据获取和存储**
@@ -79,10 +79,7 @@ stock_data/
 │   │   ├── cache_manager.py       # 缓存管理器
 │   │   └── db_adapters/           # 数据库适配器模块
 │   │       ├── supabase_config.py      # Supabase配置
-│   │       ├── supabase_connection.py   # Supabase连接管理
-│   │       ├── dolt_config.py           # Dolt配置
-│   │       ├── dolt_connection.py      # Dolt连接管理
-│   │       └── sql_adapter.py          # SQL语法适配器
+│   │       └── supabase_connection.py   # Supabase连接管理
 │   ├── services/                  # 业务服务模块
 │   │   ├── stock_service.py            # 股票服务
 │   │   ├── akshare_daily_service.py    # AKShare日线服务
@@ -116,13 +113,7 @@ stock_data/
 │   ├── data/                      # 数据存储目录
 │   │   └── qlib_bin_YYYY-MM-DD.tar.gz # qlib行情数据压缩包
 │   └── update_from_github_release.sh  # qlib数据更新脚本
-├── database/                      # 数据库相关配置和脚本
-│   ├── docker-compose.yml         # Docker Compose配置
-│   ├── config.yaml                # Dolt数据库配置
-│   ├── env.example                # 环境变量示例（支持Supabase和Dolt）
-│   ├── migrations/                # 数据库迁移脚本
-│   │   └── 001_init_database.sql  # 初始化脚本
-│   └── ...                        # 其他数据库相关文件
+├── supabase/                      # Supabase相关文件
 ├── supabase/                      # Supabase相关文件
 │   ├── 001_init_database.sql      # Supabase初始化脚本
 │   └── migrate_data.py            # 数据迁移脚本
@@ -136,7 +127,6 @@ stock_data/
 - **操作系统**: macOS / Linux
 - **Python**: Python 3.8+
 - **Python依赖**: 见 `requirements.txt`
-  - `pymysql>=1.1.0` - MySQL/Dolt 支持
   - `psycopg2>=2.9.0` - PostgreSQL/Supabase 支持
   - `akshare>=1.12.0` - AKShare数据源
   - `tushare>=1.4.0` - Tushare数据源
@@ -146,8 +136,7 @@ stock_data/
   - `tar`（用于解压数据）
   - `bash`（脚本执行环境）
 - **数据库**: 
-  - Supabase (PostgreSQL) - 推荐，默认
-  - 或 Dolt (MySQL) - 备用选项
+  - Supabase (PostgreSQL) - 默认数据库
 
 ## 安装和使用
 
@@ -191,13 +180,11 @@ bash qlib/update_from_github_release.sh --help
 
 ### 3. 配置数据库
 
-项目支持两种数据库：
-- **Supabase (PostgreSQL)** - 默认数据库
-- **Dolt (MySQL)** - 备用数据库
+项目使用 Supabase (PostgreSQL) 作为数据库。
 
-#### 配置 Supabase（推荐，默认）
+#### 配置 Supabase
 
-在 `database/.env` 或项目根目录 `.env` 文件中配置：
+在项目根目录 `.env` 文件中配置：
 
 ```bash
 # 方式1: 使用连接 URI（推荐）
@@ -211,22 +198,6 @@ SUPABASE_PASSWORD=your-password
 SUPABASE_DATABASE=postgres
 ```
 
-#### 配置 Dolt (MySQL)
-
-在 `database/.env` 文件中配置：
-
-```bash
-# 设置数据库类型为 dolt
-DB_TYPE=dolt
-
-# Dolt 连接参数
-DOLT_HOST=192.168.2.37
-DOLT_PORT=13306
-DOLT_USER=root
-DOLT_ROOT_PASSWORD=test
-DOLT_DATABASE=a_stock
-```
-
 #### 初始化数据库（首次使用前）
 
 **Supabase (PostgreSQL)**:
@@ -234,33 +205,6 @@ DOLT_DATABASE=a_stock
 # 执行 Supabase 初始化脚本
 psql $SUPABASE_URI < supabase/001_init_database.sql
 ```
-
-**Dolt (MySQL)**:
-```bash
-# 创建数据库（如果不存在）
-mysql -h 127.0.0.1 -P 13306 -u root -p -e "CREATE DATABASE IF NOT EXISTS a_stock;"
-
-# 执行初始化脚本（包含所有表结构）
-mysql -h 127.0.0.1 -P 13306 -u root -p a_stock < database/migrations/001_init_database.sql
-```
-
-或使用Docker：
-
-```bash
-# 创建数据库（如果不存在）
-docker exec stock_data_dolt mysql -uroot -ptest -e "CREATE DATABASE IF NOT EXISTS a_stock;"
-
-# 执行初始化脚本
-docker exec -i stock_data_dolt mysql -uroot -ptest a_stock < database/migrations/001_init_database.sql
-```
-
-**注意**: 如果数据库已存在且需要重新创建，请先删除数据库：
-```bash
-# Dolt
-mysql -h 127.0.0.1 -P 13306 -u root -p -e "DROP DATABASE IF EXISTS a_stock;"
-# 然后重新执行上面的初始化步骤
-```
-
 
 ### 4. 获取A股股票列表并存入数据库
 
@@ -270,16 +214,9 @@ mysql -h 127.0.0.1 -P 13306 -u root -p -e "DROP DATABASE IF EXISTS a_stock;"
 pip install -r requirements.txt
 ```
 
-#### 启动数据库服务（仅Dolt需要）
+#### 启动数据库服务
 
-如果使用 Dolt 数据库，需要启动 Docker 服务：
-
-```bash
-cd database
-docker-compose up -d
-```
-
-如果使用 Supabase，无需本地启动服务，直接使用云端数据库。
+项目使用 Supabase 云端数据库，无需本地启动数据库服务。如果需要本地开发环境，请参考 Supabase 官方文档设置本地实例。
 
 #### 运行股票列表获取脚本
 
@@ -353,7 +290,7 @@ python -m src.scripts.update_akshare_stock_data --delay 1.0
 
 #### 配置Tushare Token
 
-在 `database/.env` 文件中添加：
+在项目根目录 `.env` 文件中添加：
 ```bash
 TUSHARE_TOKEN=your_tushare_token_here
 ```
@@ -469,7 +406,7 @@ python -m src.scripts.update_trading_calendar --check-date 2024-01-01
 
 - **数据范围**: AKShare提供的交易日历数据从1990年12月19日开始
 - **更新频率**: 建议定期更新（如每周或每月），以获取最新的交易日信息
-- **数据完整性**: 交易日历表使用 `ON DUPLICATE KEY UPDATE` 机制，重复执行不会产生重复数据
+- **数据完整性**: 交易日历表使用 `ON CONFLICT ... DO UPDATE` 机制，重复执行不会产生重复数据
 - **表结构**: AKShare API只返回交易日，因此表中只存储交易日，不需要额外的标识字段
 
 ### 9. 使用 AKShare 获取和更新 ETF 数据
@@ -478,13 +415,7 @@ ETF（交易型开放式指数基金）是一种在交易所上市交易的开�
 
 #### 初始化 ETF 数据库表（首次使用前）
 
-```bash
-# 使用 Docker 执行迁移脚本
-cat database/migrations/002_add_etf_tables.sql | docker exec -i stock_data_dolt dolt sql
-
-# 验证表是否创建成功
-docker exec -i stock_data_dolt dolt sql -q "USE a_stock; SHOW TABLES LIKE 'etf%';"
-```
+ETF 表结构已包含在 Supabase 初始化脚本中（`supabase/001_init_database.sql`），无需单独初始化。
 
 #### 获取 ETF 基金列表
 
@@ -554,8 +485,7 @@ python -m src.scripts.update_etf_net_value --all --delay 1.5
 - **Qlib数据**: `~/.qlib/qlib_data/cn_data/`
 - **数据备份**: `~/.qlib/backup/`
 - **下载的tar包**: `qlib/data/qlib_bin_YYYY-MM-DD.tar.gz`
-- **Dolt数据库**: `database/dolt-data/`（如果使用Dolt）
-- **Supabase数据库**: 云端托管（如果使用Supabase）
+- **Supabase数据库**: 云端托管
 
 ## 数据源说明
 
@@ -569,7 +499,7 @@ python -m src.scripts.update_etf_net_value --all --delay 1.5
 ### Tushare（已实现）
 
 - **用途**: 获取日线行情数据、个股基本信息、财务数据
-- **API**: 需要注册获取Token，配置在 `database/.env` 文件中
+- **API**: 需要注册获取Token，配置在项目根目录 `.env` 文件中
 - **数据内容**: 
   - ✅ 日线行情数据（OHLCV）
   - 股票基本信息（计划中）
@@ -647,9 +577,8 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 
 #### 核心模块 (`src/core/`)
 
-- **`config.py`** - 数据库配置模块（统一接口）
-  - 支持 Supabase (PostgreSQL) 和 Dolt (MySQL)
-  - 默认使用 Supabase
+- **`config.py`** - 数据库配置模块
+  - 支持 Supabase (PostgreSQL)
   - 自动从环境变量读取配置
 
 - **`db.py`** - 数据库管理器（统一接口）
@@ -659,9 +588,6 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 - **`db_adapters/`** - 数据库适配器模块
   - `supabase_config.py` - Supabase 配置
   - `supabase_connection.py` - Supabase 连接管理
-  - `dolt_config.py` - Dolt 配置
-  - `dolt_connection.py` - Dolt 连接管理
-  - `sql_adapter.py` - SQL 语法适配器（MySQL ↔ PostgreSQL）
 
 #### 客户端模块 (`src/clients/`)
 
@@ -688,9 +614,8 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 - **`limit_service.py`** - 涨跌停查询服务
 
 - **`sql_queries/`** - SQL查询语句模块
-  - `sql_manager.py` - SQL管理器（根据数据库类型自动选择SQL）
-  - 每个服务都有对应的SQL文件，分别为 Dolt 和 Supabase 维护
-  - 支持 MySQL 和 PostgreSQL 语法差异的自动适配
+  - `sql_manager.py` - SQL管理器
+  - 每个服务都有对应的SQL文件，使用 PostgreSQL 原生语法
 
 #### 脚本模块 (`src/scripts/`)
 
@@ -706,9 +631,9 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 
 ### 架构特点
 
-1. **数据库适配器模式**: 支持多种数据库，通过适配器模式实现统一接口
-2. **SQL分离管理**: SQL语句独立管理，为不同数据库分别维护，便于维护和修改
-3. **自动语法适配**: 自动处理 MySQL 和 PostgreSQL 的语法差异（如 `ON DUPLICATE KEY UPDATE` ↔ `ON CONFLICT`）
+1. **数据库适配器模式**: 使用适配器模式实现统一的数据库接口
+2. **SQL分离管理**: SQL语句独立管理，使用 PostgreSQL 原生语法，便于维护和修改
+3. **PostgreSQL 原生语法**: 所有 SQL 语句使用 PostgreSQL 原生语法（`ON CONFLICT ... DO UPDATE`）
 4. **模块化设计**: 清晰的模块划分，职责明确，易于扩展
 
 ## 开发计划

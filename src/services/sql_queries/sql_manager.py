@@ -1,7 +1,7 @@
 """
 SQL 查询管理器
 
-根据数据库类型自动选择对应的 SQL 语句。
+自动选择 Supabase (PostgreSQL) 对应的 SQL 语句。
 """
 from typing import Dict, Any
 from ...core.config import db_config
@@ -10,14 +10,8 @@ from ...core.config import db_config
 class SQLManager:
     """SQL 查询管理器"""
     
-    def __init__(self, db_type: str = None):
-        """
-        初始化 SQL 管理器
-        
-        Args:
-            db_type: 数据库类型，'supabase' 或 'dolt'。如果为 None，则从配置读取
-        """
-        self.db_type = db_type or db_config.db_type
+    def __init__(self):
+        """初始化 SQL 管理器"""
         self._cache: Dict[str, Any] = {}
     
     def get_sql(self, sql_module: Any, sql_name: str) -> str:
@@ -31,21 +25,12 @@ class SQLManager:
         Returns:
             SQL 语句字符串
         """
-        # 构建属性名：sql_name + _DOLT 或 _SUPABASE
-        db_suffix = 'DOLT' if self.db_type == 'dolt' else 'SUPABASE'
-        sql_attr = f"{sql_name}_{db_suffix}"
-        
-        # 先尝试获取特定数据库的 SQL
-        if hasattr(sql_module, sql_attr):
-            return getattr(sql_module, sql_attr)
-        
-        # 如果没有特定数据库的 SQL，尝试通用 SQL（向后兼容）
+        # 直接使用 sql_name（已统一为 PostgreSQL 语法）
         if hasattr(sql_module, sql_name):
             return getattr(sql_module, sql_name)
         
         raise AttributeError(
-            f"SQL '{sql_name}' not found in module. "
-            f"Tried: {sql_attr}, {sql_name}"
+            f"SQL '{sql_name}' not found in module {sql_module.__name__}"
         )
 
 

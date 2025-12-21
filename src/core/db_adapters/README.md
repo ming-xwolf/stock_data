@@ -1,27 +1,17 @@
 # 数据库适配器模块
 
-本模块提供了对不同数据库类型的支持，将配置和连接逻辑分离到独立的文件中，便于维护和扩展。
+本模块提供 Supabase (PostgreSQL) 数据库的配置和连接管理，将配置和连接逻辑分离到独立的文件中，便于维护和扩展。
 
 ## 目录结构
 
 ```
 db_adapters/
 ├── __init__.py              # 模块导出
-├── sql_adapter.py           # SQL 语法适配器（MySQL ↔ PostgreSQL）
 ├── supabase_config.py       # Supabase (PostgreSQL) 配置
-├── supabase_connection.py   # Supabase (PostgreSQL) 连接管理
-├── dolt_config.py           # Dolt (MySQL) 配置
-└── dolt_connection.py       # Dolt (MySQL) 连接管理
+└── supabase_connection.py   # Supabase (PostgreSQL) 连接管理
 ```
 
 ## 模块说明
-
-### SQL 适配器 (`sql_adapter.py`)
-
-负责处理 MySQL 和 PostgreSQL 之间的 SQL 语法差异，主要功能：
-- 将 MySQL 的 `ON DUPLICATE KEY UPDATE` 转换为 PostgreSQL 的 `ON CONFLICT ... DO UPDATE`
-- 处理 `VALUES()` 到 `EXCLUDED.` 的转换
-- 支持复合主键的冲突检测
 
 ### Supabase 配置 (`supabase_config.py`)
 
@@ -35,20 +25,6 @@ Supabase (PostgreSQL) 数据库配置类：
 Supabase (PostgreSQL) 数据库连接管理：
 - 连接池管理
 - 游标管理（使用 `RealDictCursor`）
-- 事务管理
-- 查询和更新操作
-
-### Dolt 配置 (`dolt_config.py`)
-
-Dolt (MySQL) 数据库配置类：
-- 从环境变量读取配置
-- 提供连接参数字典
-
-### Dolt 连接 (`dolt_connection.py`)
-
-Dolt (MySQL) 数据库连接管理：
-- 连接池管理
-- 游标管理（使用 `DictCursor`）
 - 事务管理
 - 查询和更新操作
 

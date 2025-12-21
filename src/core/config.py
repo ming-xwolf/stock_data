@@ -1,13 +1,11 @@
 """
 数据库配置模块
 
-从环境变量或配置文件读取数据库连接信息。
-支持 Supabase (PostgreSQL) 和 Dolt (MySQL) 数据库。
-默认使用 Supabase 数据库。
+从环境变量或配置文件读取 Supabase (PostgreSQL) 数据库连接信息。
 """
 import os
 from pathlib import Path
-from typing import Optional, Literal, Union
+from typing import Optional
 
 try:
     from dotenv import load_dotenv
@@ -30,38 +28,22 @@ except ImportError:
                         os.environ[key.strip()] = value.strip()
 
 
-# 加载.env文件（优先从项目根目录读取）
+# 加载.env文件（从项目根目录读取）
 project_root = Path(__file__).parent.parent.parent
 root_env_path = project_root / ".env"
 load_dotenv(root_env_path)
 
-# 如果根目录没有 .env 文件，则尝试从 database/.env 读取（向后兼容）
-if not root_env_path.exists():
-    database_env_path = project_root / "database" / ".env"
-    load_dotenv(database_env_path)
-
 # 导入数据库适配器
-from .db_adapters import SupabaseConfig, DoltConfig
+from .db_adapters import SupabaseConfig
 
 
 class DatabaseConfig:
-    """数据库配置类（统一接口）"""
+    """数据库配置类"""
     
-    def __init__(self, db_type: Optional[Literal['supabase', 'dolt']] = None):
-        """
-        初始化数据库配置
-        
-        Args:
-            db_type: 数据库类型，'supabase' 或 'dolt'。如果为 None，则从环境变量读取或默认使用 'supabase'
-        """
-        # 从环境变量读取数据库类型，默认为 'supabase'
-        self.db_type = db_type or os.getenv('DB_TYPE', 'supabase').lower()
-        
-        # 根据类型创建对应的配置对象
-        if self.db_type == 'supabase':
-            self._config = SupabaseConfig()
-        else:
-            self._config = DoltConfig()
+    def __init__(self):
+        """初始化数据库配置，使用 Supabase"""
+        self.db_type = 'supabase'
+        self._config = SupabaseConfig()
     
     def get_connection_params(self) -> dict:
         """
@@ -77,16 +59,16 @@ class DatabaseConfig:
         return f"DatabaseConfig(type={self.db_type}, {self._config})"
     
     @property
-    def config(self) -> Union[SupabaseConfig, DoltConfig]:
+    def config(self) -> SupabaseConfig:
         """
         获取底层配置对象
         
         Returns:
-            SupabaseConfig 或 DoltConfig 实例
+            SupabaseConfig 实例
         """
         return self._config
 
 
-# 全局配置实例（默认使用 Supabase）
+# 全局配置实例
 db_config = DatabaseConfig()
 

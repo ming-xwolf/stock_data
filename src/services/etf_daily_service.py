@@ -24,6 +24,7 @@ class ETFDailyService:
         self.SELECT_DAILY_DATA_SQL = sql_manager.get_sql(etf_daily_sql, 'SELECT_DAILY_DATA')
         self.COUNT_DAILY_SQL = sql_manager.get_sql(etf_daily_sql, 'COUNT_DAILY')
         self.SELECT_EXISTING_DATES_SQL = sql_manager.get_sql(etf_daily_sql, 'SELECT_EXISTING_DATES')
+        self.SELECT_ETFS_NEED_UPDATE_SQL = sql_manager.get_sql(etf_daily_sql, 'SELECT_ETFS_NEED_UPDATE')
     
     def insert_daily_data(self, data: Dict[str, any]) -> bool:
         """
@@ -300,3 +301,66 @@ class ETFDailyService:
         
         # 调用原有的批量插入方法
         return self.batch_insert_daily_data(data_list)
+    
+    def get_etfs_need_update(self) -> List[Dict[str, any]]:
+        """
+        获取需要更新的 ETF 列表（缺少最新交易日数据的 ETF）
+        
+        该方法会：
+        1. 查询交易日历的最新交易日
+        2. 结合 etf_funds 表，找出 etf_daily 中缺少最新交易日数据的 ETF
+        3. 返回需要更新的 ETF 列表，包含建议的起始日期
+        
+        Returns:
+            需要更新的 ETF 列表，每个元素包含：
+            - code: ETF 代码
+            - name: ETF 名称
+            - latest_daily_date: 该 ETF 在数据库中的最新日期
+            - latest_trading_date: 交易日历中的最新交易日
+            - start_date: 建议的更新起始日期（从该 ETF 最新日期的下一天开始）
+        """
+        try:
+            results = db_manager.execute_query(self.SELECT_ETFS_NEED_UPDATE_SQL)
+            
+            # 转换日期格式
+            etfs_need_update = []
+            for row in results:
+                etf_info = {
+                    'code': row['code'],
+                    'name': row.get('name', ''),
+                    'latest_daily_date': None,
+                    'latest_trading_date': None,
+                    'start_date': None
+                }
+                
+                # 转换 latest_daily_date
+                if row.get('latest_daily_date'):
+                    latest_daily = row['latest_daily_date']
+                    if isinstance(latest_daily, datetime):
+                        etf_info['latest_daily_date'] = latest_daily.strftime('%Y-%m-%d')
+                    else:
+                        etf_info['latest_daily_date'] = str(latest_daily)
+                
+                # 转换 latest_trading_date
+                if row.get('latest_trading_date'):
+                    latest_trading = row['latest_trading_date']
+                    if isinstance(latest_trading, datetime):
+                        etf_info['latest_trading_date'] = latest_trading.strftime('%Y-%m-%d')
+                    else:
+                        etf_info['latest_trading_date'] = str(latest_trading)
+                
+                # 转换 start_date
+                if row.get('start_date'):
+                    start = row['start_date']
+                    if isinstance(start, datetime):
+                        etf_info['start_date'] = start.strftime('%Y-%m-%d')
+                    else:
+                        etf_info['start_date'] = str(start)
+                
+                etfs_need_update.append(etf_info)
+            
+            return etfs_need_update
+            
+        except Exception as e:
+            logger.error(f"查询需要更新的 ETF 列表失败: {e}", exc_info=True)
+            return []

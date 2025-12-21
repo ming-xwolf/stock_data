@@ -2,7 +2,7 @@
 """
 获取A股股票列表并存入数据库
 
-使用AKShare API获取A股股票列表，并将基本信息存入Dolt数据库。
+使用AKShare API获取A股股票列表，并将基本信息存入Supabase数据库。
 """
 import argparse
 import logging

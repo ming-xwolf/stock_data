@@ -101,62 +101,78 @@ def update_all_etfs(start_date: str = None, end_date: str = None,
     批量更新所有 ETF 的日线数据
     
     优化策略：
-    1. 自动检测每只 ETF 的最新日期，只获取新数据
-    2. 跳过已是最新数据的 ETF（不调用API）
-    3. 添加延迟避免API限流
+    1. 先查看交易日历的最新交易日期
+    2. 结合 etf_funds 表，找出 etf_daily 中缺少最新交易日数据的 ETF
+    3. 只对这些需要更新的 ETF 调用 API，大幅减少 API 调用次数
+    4. 添加延迟避免API限流
     """
-    etf_service = ETFService()
+    from src.services.trading_calendar_service import TradingCalendarService
+    
     daily_service = ETFDailyService()
+    trading_calendar_service = TradingCalendarService()
     
-    # 获取所有 ETF 列表
-    logger.info("获取 ETF 列表...")
-    etfs = etf_service.get_all_etfs()
+    # 获取需要更新的 ETF 列表（缺少最新交易日数据的 ETF）
+    # SQL 查询会自动过滤掉未来的交易日，只考虑今天或今天以前的交易日
+    logger.info("查询需要更新的 ETF 列表（只考虑今天或今天以前的交易日）...")
+    etfs_need_update = daily_service.get_etfs_need_update()
     
-    if not etfs:
-        logger.error("未获取到 ETF 列表，请先运行 fetch_etfs.py")
+    # 获取交易日历的最新交易日（用于日志显示）
+    latest_trading_date = trading_calendar_service.get_latest_trading_date()
+    if latest_trading_date:
+        logger.info(f"交易日历最新交易日: {latest_trading_date}")
+    
+    today = datetime.now().date().strftime('%Y-%m-%d')
+    logger.info(f"当前日期: {today}，只更新今天或今天以前的交易日数据")
+    
+    if not etfs_need_update:
+        logger.info("所有 ETF 都已是最新数据，无需更新")
         return
     
-    logger.info(f"找到 {len(etfs)} 只 ETF，开始批量更新...")
+    logger.info(f"找到 {len(etfs_need_update)} 只 ETF 需要更新")
     logger.info(f"API延迟设置: {delay} 秒")
     
     success_count = 0
     failed_count = 0
-    skipped_count = 0
     
     start_time = time.time()
     
-    for i, etf in enumerate(etfs, 1):
-        code = etf['code']
+    for i, etf_info in enumerate(etfs_need_update, 1):
+        code = etf_info['code']
+        etf_latest_date = etf_info.get('latest_daily_date')
+        suggested_start_date = etf_info.get('start_date')
         
         try:
-            # 优化：在调用API前检查是否需要更新
-            effective_start_date = start_date
-            if start_date is None:
-                latest_date = daily_service.get_latest_date(code)
-                if latest_date:
-                    latest_dt = datetime.strptime(latest_date, '%Y-%m-%d')
-                    end_dt = datetime.now().date()
-                    if latest_dt.date() >= end_dt:
-                        skipped_count += 1
-                        # 即使跳过也需要打印进度（如果到了批次）
-                        if i % batch_size == 0 or i == len(etfs):
-                            elapsed = time.time() - start_time
-                            avg_time = elapsed / i
-                            remaining = avg_time * (len(etfs) - i)
-                            remaining_str = str(timedelta(seconds=int(remaining)))
-                            logger.info(
-                                f"进度: {i}/{len(etfs)} ({i/len(etfs)*100:.1f}%) - "
-                                f"成功: {success_count}, 失败: {failed_count}, 跳过: {skipped_count} - "
-                                f"预计剩余时间: {remaining_str}"
-                            )
-                        continue
-                    # 从最新日期的下一天开始
-                    effective_start_date = (latest_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+            # 使用建议的起始日期，或者用户指定的起始日期
+            effective_start_date = start_date or suggested_start_date
+            
+            # 确保结束日期不超过今天
+            effective_end_date = end_date
+            if not effective_end_date:
+                effective_end_date = datetime.now().date().strftime('%Y-%m-%d')
+            else:
+                # 如果用户指定的结束日期是未来日期，限制为今天
+                end_date_obj = datetime.strptime(effective_end_date, '%Y-%m-%d').date() if '-' in effective_end_date else datetime.strptime(effective_end_date, '%Y%m%d').date()
+                today_obj = datetime.now().date()
+                if end_date_obj > today_obj:
+                    effective_end_date = today_obj.strftime('%Y-%m-%d')
+            
+            if etf_latest_date:
+                logger.info(
+                    f"ETF {code} ({etf_info.get('name', '')}): "
+                    f"数据库最新日期={etf_latest_date}, "
+                    f"交易日历最新日期={etf_info.get('latest_trading_date', 'N/A')}, "
+                    f"将从 {effective_start_date or '历史开始'} 更新到 {effective_end_date}"
+                )
+            else:
+                logger.info(
+                    f"ETF {code} ({etf_info.get('name', '')}): "
+                    f"数据库无数据，将下载完整历史数据（到 {effective_end_date}）"
+                )
             
             success = update_single_etf(
                 code=code,
                 start_date=effective_start_date,
-                end_date=end_date,
+                end_date=effective_end_date,
                 period=period,
                 adjust=adjust,
                 delay=delay
@@ -172,14 +188,14 @@ def update_all_etfs(start_date: str = None, end_date: str = None,
             failed_count += 1
         
         # 打印进度
-        if i % batch_size == 0 or i == len(etfs):
+        if i % batch_size == 0 or i == len(etfs_need_update):
             elapsed = time.time() - start_time
             avg_time = elapsed / i
-            remaining = avg_time * (len(etfs) - i)
+            remaining = avg_time * (len(etfs_need_update) - i)
             remaining_str = str(timedelta(seconds=int(remaining)))
             logger.info(
-                f"进度: {i}/{len(etfs)} ({i/len(etfs)*100:.1f}%) - "
-                f"成功: {success_count}, 失败: {failed_count}, 跳过: {skipped_count} - "
+                f"进度: {i}/{len(etfs_need_update)} ({i/len(etfs_need_update)*100:.1f}%) - "
+                f"成功: {success_count}, 失败: {failed_count} - "
                 f"预计剩余时间: {remaining_str}"
             )
     
@@ -188,8 +204,7 @@ def update_all_etfs(start_date: str = None, end_date: str = None,
     logger.info(f"批量更新完成，耗时: {total_time}")
     logger.info(f"成功: {success_count} 只")
     logger.info(f"失败: {failed_count} 只")
-    logger.info(f"跳过（已是最新）: {skipped_count} 只")
-    logger.info(f"总计: {len(etfs)} 只")
+    logger.info(f"总计需要更新: {len(etfs_need_update)} 只")
 
 
 def main():

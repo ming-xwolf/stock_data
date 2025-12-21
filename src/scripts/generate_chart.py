@@ -77,8 +77,8 @@ def main():
         "--format",
         type=str,
         choices=["png", "svg"],
-        default="png",
-        help="图片格式：png=PNG位图格式, svg=SVG矢量格式（默认: png）",
+        default="svg",
+        help="图片格式：png=PNG位图格式, svg=SVG矢量格式（默认: svg）",
     )
 
     args = parser.parse_args()

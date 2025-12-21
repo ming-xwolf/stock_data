@@ -33,7 +33,7 @@ DEFAULT_CHART_DIR = "generated_charts"  # 默认图表保存目录
 DEFAULT_DPI = 150  # 默认图片分辨率
 DEFAULT_FIGSIZE = (20, 12)  # 默认图表尺寸（增加高度以便MACD更清晰）
 DEFAULT_PERIOD = "D"  # 默认周期（日线）
-DEFAULT_FORMAT: ImageFormat = "png"  # 默认图片格式
+DEFAULT_FORMAT: ImageFormat = "svg"  # 默认图片格式
 
 
 class StockChartGenerator:

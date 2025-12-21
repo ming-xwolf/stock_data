@@ -2,21 +2,24 @@
 数据库操作模块
 
 提供数据库连接和基本操作功能。
+支持 Supabase (PostgreSQL) 和 Dolt (MySQL) 数据库。
+默认使用 Supabase 数据库。
 """
 import logging
-from contextlib import contextmanager
 from typing import Optional
 
-import pymysql
-from pymysql.cursors import DictCursor
-
 from .config import db_config
+from .db_adapters import (
+    SupabaseConnection,
+    DoltConnection,
+    SQLAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    """数据库管理类"""
+    """数据库管理类（统一接口）"""
     
     def __init__(self, config=None):
         """
@@ -26,36 +29,40 @@ class DatabaseManager:
             config: 数据库配置对象，如果为None则使用默认配置
         """
         self.config = config or db_config
-        self._connection: Optional[pymysql.Connection] = None
+        self._connection = None
+        self.sql_adapter = SQLAdapter()
+        
+        # 根据配置类型创建对应的连接对象
+        if self.config.db_type == 'supabase':
+            self._connection = SupabaseConnection(self.config.config)
+        else:
+            self._connection = DoltConnection(self.config.config)
     
-    @contextmanager
-    def get_connection(self, cursor_type=DictCursor):
+    def get_connection(self, cursor_type=None):
         """
         获取数据库连接的上下文管理器
         
         Args:
-            cursor_type: 游标类型，默认为DictCursor
+            cursor_type: 游标类型（仅用于 MySQL，PostgreSQL 固定使用 RealDictCursor）
             
         Yields:
             数据库连接对象
         """
-        conn = None
-        try:
-            params = self.config.get_connection_params()
-            params['cursorclass'] = cursor_type
-            conn = pymysql.connect(**params)
-            logger.debug(f"数据库连接已建立: {self.config}")
-            yield conn
-            conn.commit()
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"数据库操作失败: {e}", exc_info=True)
-            raise
-        finally:
-            if conn:
-                conn.close()
-                logger.debug("数据库连接已关闭")
+        return self._connection.get_connection(cursor_type)
+    
+    def _adapt_sql(self, sql: str) -> str:
+        """
+        根据数据库类型适配 SQL 语句
+        
+        Args:
+            sql: 原始 SQL 语句
+            
+        Returns:
+            适配后的 SQL 语句
+        """
+        if self.config.db_type == 'supabase':
+            return self.sql_adapter.convert_mysql_to_postgresql(sql)
+        return sql
     
     def execute_query(self, sql: str, params: Optional[tuple] = None) -> list:
         """
@@ -68,10 +75,8 @@ class DatabaseManager:
         Returns:
             查询结果列表
         """
-        with self.get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params)
-                return cursor.fetchall()
+        sql = self._adapt_sql(sql)
+        return self._connection.execute_query(sql, params)
     
     def execute_update(self, sql: str, params: Optional[tuple] = None) -> int:
         """
@@ -84,11 +89,8 @@ class DatabaseManager:
         Returns:
             受影响的行数
         """
-        with self.get_connection() as conn:
-            with conn.cursor() as cursor:
-                affected_rows = cursor.execute(sql, params)
-                conn.commit()
-                return affected_rows
+        sql = self._adapt_sql(sql)
+        return self._connection.execute_update(sql, params)
     
     def execute_many(self, sql: str, params_list: list) -> int:
         """
@@ -101,11 +103,8 @@ class DatabaseManager:
         Returns:
             受影响的行数
         """
-        with self.get_connection() as conn:
-            with conn.cursor() as cursor:
-                affected_rows = cursor.executemany(sql, params_list)
-                conn.commit()
-                return affected_rows
+        sql = self._adapt_sql(sql)
+        return self._connection.execute_many(sql, params_list)
     
     def test_connection(self) -> bool:
         """
@@ -114,15 +113,7 @@ class DatabaseManager:
         Returns:
             连接是否成功
         """
-        try:
-            with self.get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT 1")
-                    result = cursor.fetchone()
-                    return result is not None
-        except Exception as e:
-            logger.error(f"数据库连接测试失败: {e}")
-            return False
+        return self._connection.test_connection()
 
 
 # 全局数据库管理器实例

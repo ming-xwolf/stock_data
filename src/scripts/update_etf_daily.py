@@ -51,14 +51,19 @@ def update_single_etf(code: str, start_date: str = None, end_date: str = None,
     if start_date is None:
         latest_date = daily_service.get_latest_date(code)
         if latest_date:
+            # 数据库中有数据，检查是否需要更新
             latest_dt = datetime.strptime(latest_date, '%Y-%m-%d')
             end_dt = datetime.now().date()
             if latest_dt.date() >= end_dt:
                 logger.info(f"✓ ETF {code} 已是最新数据（最新日期: {latest_date}），跳过更新")
                 return True
-            # 从最新日期的下一天开始
+            # 从最新日期的下一天开始增量更新
             start_date = (latest_dt + timedelta(days=1)).strftime('%Y-%m-%d')
-            logger.info(f"从最新日期后续更新: {start_date}")
+            logger.info(f"ETF {code} 已有数据（最新日期: {latest_date}），从 {start_date} 开始增量更新")
+        else:
+            # 数据库中没有数据，下载完整历史数据
+            logger.info(f"ETF {code} 在数据库中无数据，将下载完整历史行情数据")
+            # start_date 保持为 None，get_etf_daily_data 会使用默认值 "19900101" 下载完整数据
     
     # 添加延迟（如果需要）
     if delay > 0:
@@ -78,9 +83,10 @@ def update_single_etf(code: str, start_date: str = None, end_date: str = None,
             logger.warning(f"✗ ETF {code} 未获取到日线数据")
             return False
         
-        # 批量插入数据库
-        affected_rows = daily_service.batch_insert_daily_data(daily_data)
-        logger.info(f"✓ ETF {code} 日线数据更新成功，插入/更新 {len(daily_data)} 条记录")
+        # 批量插入数据库（自动过滤已存在的数据）
+        original_count = len(daily_data)
+        affected_rows = daily_service.batch_insert_daily_data_filtered(daily_data, check_existing=True)
+        logger.info(f"✓ ETF {code} 日线数据更新成功，获取 {original_count} 条，插入/更新 {affected_rows} 条记录")
         return True
         
     except Exception as e:

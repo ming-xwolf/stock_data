@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import financial_sql
 
 logger = logging.getLogger(__name__)
 
@@ -15,62 +17,13 @@ logger = logging.getLogger(__name__)
 class FinancialService:
     """财务数据服务类"""
     
-    # 利润表
-    INSERT_INCOME_SQL = """
-        INSERT INTO stock_financial_income (
-            code, report_date, report_period, report_type,
-            total_revenue, operating_revenue, operating_cost,
-            operating_profit, total_profit, net_profit,
-            net_profit_attributable, basic_eps, diluted_eps
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            report_period = VALUES(report_period),
-            report_type = VALUES(report_type),
-            total_revenue = VALUES(total_revenue),
-            operating_revenue = VALUES(operating_revenue),
-            operating_cost = VALUES(operating_cost),
-            operating_profit = VALUES(operating_profit),
-            total_profit = VALUES(total_profit),
-            net_profit = VALUES(net_profit),
-            net_profit_attributable = VALUES(net_profit_attributable),
-            basic_eps = VALUES(basic_eps),
-            diluted_eps = VALUES(diluted_eps),
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    # 查询股票利润表数据数量
-    SELECT_INCOME_COUNT_SQL = """
-        SELECT COUNT(*) as count, MAX(report_date) as latest_date
-        FROM stock_financial_income
-        WHERE code = %s
-    """
-    
-    # 查询股票所有利润表报告日期
-    SELECT_INCOME_DATES_SQL = """
-        SELECT report_date
-        FROM stock_financial_income
-        WHERE code = %s
-        ORDER BY report_date DESC
-    """
-    
-    # 查询股票最新利润表数据（包含报告日期和报告类型）
-    SELECT_LATEST_INCOME_SQL = """
-        SELECT report_date, report_period, report_type
-        FROM stock_financial_income
-        WHERE code = %s
-        ORDER BY report_date DESC
-        LIMIT 1
-    """
-    
-    # 查询没有指定报告日期的股票代码列表
-    SELECT_STOCKS_WITHOUT_REPORT_DATE_SQL = """
-        SELECT DISTINCT s.code
-        FROM stocks s
-        LEFT JOIN stock_financial_income i ON s.code = i.code AND i.report_date = %s
-        WHERE i.code IS NULL
-        ORDER BY s.code
-    """
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_INCOME_SQL = sql_manager.get_sql(financial_sql, 'INSERT_INCOME')
+        self.SELECT_INCOME_COUNT_SQL = sql_manager.get_sql(financial_sql, 'SELECT_INCOME_COUNT')
+        self.SELECT_INCOME_DATES_SQL = sql_manager.get_sql(financial_sql, 'SELECT_INCOME_DATES')
+        self.SELECT_LATEST_INCOME_SQL = sql_manager.get_sql(financial_sql, 'SELECT_LATEST_INCOME')
+        self.SELECT_STOCKS_WITHOUT_REPORT_DATE_SQL = sql_manager.get_sql(financial_sql, 'SELECT_STOCKS_WITHOUT_REPORT_DATE')
     
     def insert_income_statement(self, code: str, report_date: str,
                                report_period: Optional[str] = None,

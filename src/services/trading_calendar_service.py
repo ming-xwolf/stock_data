@@ -10,6 +10,8 @@ import pandas as pd
 
 import akshare as ak
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import trading_calendar_sql
 
 logger = logging.getLogger(__name__)
 
@@ -17,27 +19,11 @@ logger = logging.getLogger(__name__)
 class TradingCalendarService:
     """交易日历服务类"""
     
-    INSERT_TRADING_DATE_SQL = """
-        INSERT INTO trading_calendar (trade_date)
-        VALUES (%s)
-        ON DUPLICATE KEY UPDATE
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    SELECT_LATEST_DATE_SQL = """
-        SELECT MAX(trade_date) as latest_date 
-        FROM trading_calendar
-    """
-    
-    SELECT_TRADING_DATE_SQL = """
-        SELECT trade_date 
-        FROM trading_calendar 
-        WHERE trade_date = %s
-    """
-    
     def __init__(self):
-        """初始化交易日历服务"""
-        pass
+        """初始化交易日历服务，加载 SQL 语句"""
+        self.INSERT_TRADING_DATE_SQL = sql_manager.get_sql(trading_calendar_sql, 'INSERT_TRADING_DATE')
+        self.SELECT_LATEST_DATE_SQL = sql_manager.get_sql(trading_calendar_sql, 'SELECT_LATEST_DATE')
+        self.SELECT_TRADING_DATE_SQL = sql_manager.get_sql(trading_calendar_sql, 'SELECT_TRADING_DATE')
     
     def fetch_trading_calendar(self) -> Optional[pd.DataFrame]:
         """

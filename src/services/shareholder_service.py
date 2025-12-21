@@ -7,6 +7,8 @@ import logging
 from typing import List, Dict, Optional
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import shareholder_sql
 
 logger = logging.getLogger(__name__)
 
@@ -14,33 +16,11 @@ logger = logging.getLogger(__name__)
 class ShareholderService:
     """股东数据服务类"""
     
-    INSERT_SHAREHOLDER_SQL = """
-        INSERT INTO stock_shareholders (
-            code, shareholder_name, shareholder_type, holding_ratio, holding_amount,
-            change_amount, change_ratio, report_date, report_period
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            shareholder_type = VALUES(shareholder_type),
-            holding_ratio = VALUES(holding_ratio),
-            holding_amount = VALUES(holding_amount),
-            change_amount = VALUES(change_amount),
-            change_ratio = VALUES(change_ratio),
-            report_period = VALUES(report_period)
-    """
-    
-    SELECT_SHAREHOLDERS_SQL = """
-        SELECT * FROM stock_shareholders 
-        WHERE code = %s AND report_date = %s
-        ORDER BY holding_ratio DESC
-    """
-    
-    SELECT_LATEST_SHAREHOLDERS_SQL = """
-        SELECT * FROM stock_shareholders 
-        WHERE code = %s 
-        AND report_date = (SELECT MAX(report_date) FROM stock_shareholders WHERE code = %s)
-        ORDER BY holding_ratio DESC
-    """
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_SHAREHOLDER_SQL = sql_manager.get_sql(shareholder_sql, 'INSERT_SHAREHOLDER')
+        self.SELECT_SHAREHOLDERS_SQL = sql_manager.get_sql(shareholder_sql, 'SELECT_SHAREHOLDERS')
+        self.SELECT_LATEST_SHAREHOLDERS_SQL = sql_manager.get_sql(shareholder_sql, 'SELECT_LATEST_SHAREHOLDERS')
     
     def insert_shareholder(self, code: str, shareholder_name: str,
                           shareholder_type: Optional[str] = None,

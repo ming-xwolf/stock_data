@@ -248,3 +248,4 @@ site/
 # 本地配置文件（如果有）
 local_config.py
 local_settings.py
+myplot_test.py

@@ -69,7 +69,49 @@
 ```
 stock_data/
 ├── src/                           # Python源代码目录
-│   └── __init__.py                # Python包初始化文件
+│   ├── __init__.py                # Python包初始化文件
+│   ├── clients/                   # 数据源客户端
+│   │   ├── akshare_client.py      # AKShare客户端
+│   │   └── tushare_client.py      # Tushare客户端
+│   ├── core/                      # 核心模块
+│   │   ├── config.py              # 数据库配置（统一接口）
+│   │   ├── db.py                  # 数据库管理器（统一接口）
+│   │   ├── cache_manager.py       # 缓存管理器
+│   │   └── db_adapters/           # 数据库适配器模块
+│   │       ├── supabase_config.py      # Supabase配置
+│   │       ├── supabase_connection.py   # Supabase连接管理
+│   │       ├── dolt_config.py           # Dolt配置
+│   │       ├── dolt_connection.py      # Dolt连接管理
+│   │       └── sql_adapter.py          # SQL语法适配器
+│   ├── services/                  # 业务服务模块
+│   │   ├── stock_service.py            # 股票服务
+│   │   ├── akshare_daily_service.py    # AKShare日线服务
+│   │   ├── tushare_daily_service.py    # Tushare日线服务
+│   │   ├── etf_service.py              # ETF服务
+│   │   ├── etf_daily_service.py        # ETF日线服务
+│   │   ├── etf_net_value_service.py    # ETF净值服务
+│   │   ├── industry_service.py         # 行业服务
+│   │   ├── trading_calendar_service.py # 交易日历服务
+│   │   ├── market_value_service.py     # 市值服务
+│   │   ├── shareholder_service.py      # 股东服务
+│   │   ├── financial_service.py        # 财务服务
+│   │   ├── limit_service.py            # 涨跌停服务
+│   │   └── sql_queries/                # SQL查询语句模块
+│   │       ├── sql_manager.py          # SQL管理器
+│   │       ├── stock_sql.py             # 股票SQL
+│   │       ├── akshare_daily_sql.py    # AKShare日线SQL
+│   │       ├── tushare_daily_sql.py    # Tushare日线SQL
+│   │       └── ...                      # 其他服务SQL
+│   └── scripts/                   # 脚本目录
+│       ├── fetch_stocks.py             # 获取股票列表
+│       ├── fetch_etfs.py              # 获取ETF列表
+│       ├── update_akshare_daily.py    # 更新AKShare日线
+│       ├── update_tushare_daily.py    # 更新Tushare日线
+│       ├── update_akshare_stock_data.py # 更新股票扩展数据
+│       ├── update_trading_calendar.py  # 更新交易日历
+│       ├── update_etf_daily.py         # 更新ETF日线
+│       ├── update_etf_net_value.py     # 更新ETF净值
+│       └── query_limit_stocks.py       # 查询涨跌停
 ├── qlib/                          # Qlib相关工具目录
 │   ├── data/                      # 数据存储目录
 │   │   └── qlib_bin_YYYY-MM-DD.tar.gz # qlib行情数据压缩包
@@ -77,20 +119,35 @@ stock_data/
 ├── database/                      # 数据库相关配置和脚本
 │   ├── docker-compose.yml         # Docker Compose配置
 │   ├── config.yaml                # Dolt数据库配置
-│   ├── a_stock_schema.md          # 股票数据库表结构文档
+│   ├── env.example                # 环境变量示例（支持Supabase和Dolt）
+│   ├── migrations/                # 数据库迁移脚本
+│   │   └── 001_init_database.sql  # 初始化脚本
 │   └── ...                        # 其他数据库相关文件
+├── supabase/                      # Supabase相关文件
+│   ├── 001_init_database.sql      # Supabase初始化脚本
+│   └── migrate_data.py            # 数据迁移脚本
 ├── .gitignore                     # Git忽略文件配置
+├── requirements.txt                # Python依赖
 └── README.md                      # 项目说明文档
 ```
 
 ## 环境要求
 
 - **操作系统**: macOS / Linux
-- **Python**: Python 3.x（用于日期计算）
+- **Python**: Python 3.8+
+- **Python依赖**: 见 `requirements.txt`
+  - `pymysql>=1.1.0` - MySQL/Dolt 支持
+  - `psycopg2>=2.9.0` - PostgreSQL/Supabase 支持
+  - `akshare>=1.12.0` - AKShare数据源
+  - `tushare>=1.4.0` - Tushare数据源
+  - `python-dotenv>=1.0.0` - 环境变量管理
 - **工具**: 
   - `wget`（用于下载数据）
   - `tar`（用于解压数据）
   - `bash`（脚本执行环境）
+- **数据库**: 
+  - Supabase (PostgreSQL) - 推荐，默认
+  - 或 Dolt (MySQL) - 备用选项
 
 ## 安装和使用
 
@@ -132,8 +189,53 @@ bash qlib/update_from_github_release.sh -f /path/to/qlib_bin_YYYYMMDD.tar.gz
 bash qlib/update_from_github_release.sh --help
 ```
 
-### 3. 初始化数据库（首次使用前）
+### 3. 配置数据库
 
+项目支持两种数据库：
+- **Supabase (PostgreSQL)** - 默认数据库
+- **Dolt (MySQL)** - 备用数据库
+
+#### 配置 Supabase（推荐，默认）
+
+在 `database/.env` 或项目根目录 `.env` 文件中配置：
+
+```bash
+# 方式1: 使用连接 URI（推荐）
+SUPABASE_URI=postgresql://user:password@host:port/database
+
+# 方式2: 使用单独参数
+SUPABASE_HOST=your-supabase-host.supabase.co
+SUPABASE_PORT=5432
+SUPABASE_USER=postgres
+SUPABASE_PASSWORD=your-password
+SUPABASE_DATABASE=postgres
+```
+
+#### 配置 Dolt (MySQL)
+
+在 `database/.env` 文件中配置：
+
+```bash
+# 设置数据库类型为 dolt
+DB_TYPE=dolt
+
+# Dolt 连接参数
+DOLT_HOST=192.168.2.37
+DOLT_PORT=13306
+DOLT_USER=root
+DOLT_ROOT_PASSWORD=test
+DOLT_DATABASE=a_stock
+```
+
+#### 初始化数据库（首次使用前）
+
+**Supabase (PostgreSQL)**:
+```bash
+# 执行 Supabase 初始化脚本
+psql $SUPABASE_URI < supabase/001_init_database.sql
+```
+
+**Dolt (MySQL)**:
 ```bash
 # 创建数据库（如果不存在）
 mysql -h 127.0.0.1 -P 13306 -u root -p -e "CREATE DATABASE IF NOT EXISTS a_stock;"
@@ -154,6 +256,7 @@ docker exec -i stock_data_dolt mysql -uroot -ptest a_stock < database/migrations
 
 **注意**: 如果数据库已存在且需要重新创建，请先删除数据库：
 ```bash
+# Dolt
 mysql -h 127.0.0.1 -P 13306 -u root -p -e "DROP DATABASE IF EXISTS a_stock;"
 # 然后重新执行上面的初始化步骤
 ```
@@ -167,28 +270,32 @@ mysql -h 127.0.0.1 -P 13306 -u root -p -e "DROP DATABASE IF EXISTS a_stock;"
 pip install -r requirements.txt
 ```
 
-#### 启动数据库服务
+#### 启动数据库服务（仅Dolt需要）
+
+如果使用 Dolt 数据库，需要启动 Docker 服务：
 
 ```bash
 cd database
 docker-compose up -d
 ```
 
+如果使用 Supabase，无需本地启动服务，直接使用云端数据库。
+
 #### 运行股票列表获取脚本
 
 基本用法（快速，不获取上市日期）：
 ```bash
-python src/fetch_stocks.py
+python -m src.scripts.fetch_stocks
 ```
 
 获取上市日期（较慢，但信息更完整）：
 ```bash
-python src/fetch_stocks.py --with-list-date
+python -m src.scripts.fetch_stocks --with-list-date
 ```
 
 查看帮助：
 ```bash
-python src/fetch_stocks.py --help
+python -m src.scripts.fetch_stocks --help
 ```
 
 **市场识别规则**：
@@ -200,27 +307,27 @@ python src/fetch_stocks.py --help
 
 更新单只股票的所有扩展数据：
 ```bash
-python src/update_akshare_stock_data.py --code 000001
+python -m src.scripts.update_akshare_stock_data --code 000001
 ```
 
 更新所有股票的行业信息：
 ```bash
-python src/update_akshare_stock_data.py --data-type industry
+python -m src.scripts.update_akshare_stock_data --data-type industry
 ```
 
 更新所有股票的股东信息：
 ```bash
-python src/update_akshare_stock_data.py --data-type shareholders
+python -m src.scripts.update_akshare_stock_data --data-type shareholders
 ```
 
 更新所有股票的市值信息：
 ```bash
-python src/update_akshare_stock_data.py --data-type market_value
+python -m src.scripts.update_akshare_stock_data --data-type market_value
 ```
 
 更新所有股票的财务数据（包括所有报告期的利润表数据）：
 ```bash
-python src/update_akshare_stock_data.py --data-type financial
+python -m src.scripts.update_akshare_stock_data --data-type financial
 ```
 
 **利润表数据更新说明**：
@@ -234,12 +341,12 @@ python src/update_akshare_stock_data.py --data-type financial
 
 更新所有股票的公司信息（企业性质、实际控制人、主营产品）：
 ```bash
-python src/update_akshare_stock_data.py --data-type company_info
+python -m src.scripts.update_akshare_stock_data --data-type company_info
 ```
 
 更新所有股票的所有扩展数据（推荐使用延迟避免API限制）：
 ```bash
-python src/update_akshare_stock_data.py --delay 1.0
+python -m src.scripts.update_akshare_stock_data --delay 1.0
 ```
 
 ### 6. 使用Tushare更新日线行情数据
@@ -255,23 +362,23 @@ TUSHARE_TOKEN=your_tushare_token_here
 
 ```bash
 # 从最新日期开始更新（自动检测）
-python src/update_tushare_daily.py --code 000001
+python -m src.scripts.update_tushare_daily --code 000001
 
 # 指定日期范围
-python src/update_tushare_daily.py --code 000001 --start-date 20230101 --end-date 20231201
+python -m src.scripts.update_tushare_daily --code 000001 --start-date 20230101 --end-date 20231201
 ```
 
 #### 批量更新所有股票
 
 ```bash
 # 从最新日期开始更新
-python src/update_tushare_daily.py --all
+python -m src.scripts.update_tushare_daily --all
 
 # 指定日期范围
-python src/update_tushare_daily.py --all --start-date 20230101 --end-date 20231201
+python -m src.scripts.update_tushare_daily --all --start-date 20230101 --end-date 20231201
 
 # 自定义批次大小和延迟（推荐）
-python src/update_tushare_daily.py --all --batch-size 20 --delay 1.0
+python -m src.scripts.update_tushare_daily --all --batch-size 20 --delay 1.0
 ```
 
 #### 注意事项
@@ -289,35 +396,35 @@ AKShare提供免费的数据源，包含完整的日线行情数据（OHLCV、�
 
 ```bash
 # 从最新日期开始更新（自动检测数据库中的最新日期）
-python src/update_akshare_daily.py --code 000001
+python -m src.scripts.update_akshare_daily --code 000001
 
 # 指定日期范围
-python src/update_akshare_daily.py --code 000001 --start-date 20230101 --end-date 20231201
+python -m src.scripts.update_akshare_daily --code 000001 --start-date 20230101 --end-date 20231201
 
 # 使用后复权数据
-python src/update_akshare_daily.py --code 000001 --adjust hfq
+python -m src.scripts.update_akshare_daily --code 000001 --adjust hfq
 
 # 使用分时API获取成交量数据（如果新浪API失败）
-python src/update_akshare_daily.py --code 000001 --use-minute
+python -m src.scripts.update_akshare_daily --code 000001 --use-minute
 
 # 不使用新浪API（使用腾讯API作为备选）
-python src/update_akshare_daily.py --code 000001 --no-sina
+python -m src.scripts.update_akshare_daily --code 000001 --no-sina
 ```
 
 #### 批量更新所有股票
 
 ```bash
 # 从最新日期开始更新（自动跳过已是最新的股票）
-python src/update_akshare_daily.py --all
+python -m src.scripts.update_akshare_daily --all
 
 # 指定日期范围
-python src/update_akshare_daily.py --all --start-date 20230101 --end-date 20231201
+python -m src.scripts.update_akshare_daily --all --start-date 20230101 --end-date 20231201
 
 # 自定义延迟（推荐 >= 2.0 秒以避免新浪API封IP）
-python src/update_akshare_daily.py --all --delay 2.5
+python -m src.scripts.update_akshare_daily --all --delay 2.5
 
 # 自定义批次大小和延迟
-python src/update_akshare_daily.py --all --batch-size 10 --delay 2.0
+python -m src.scripts.update_akshare_daily --all --batch-size 10 --delay 2.0
 ```
 
 #### API数据源说明
@@ -343,13 +450,13 @@ python src/update_akshare_daily.py --all --batch-size 10 --delay 2.0
 
 ```bash
 # 智能更新（只更新新数据，推荐）
-python src/update_trading_calendar.py
+python -m src.scripts.update_trading_calendar
 
 # 强制更新所有数据（忽略已有数据）
-python src/update_trading_calendar.py --force
+python -m src.scripts.update_trading_calendar --force
 
 # 检查指定日期是否为交易日
-python src/update_trading_calendar.py --check-date 2024-01-01
+python -m src.scripts.update_trading_calendar --check-date 2024-01-01
 ```
 
 #### 功能说明
@@ -447,7 +554,8 @@ python -m src.scripts.update_etf_net_value --all --delay 1.5
 - **Qlib数据**: `~/.qlib/qlib_data/cn_data/`
 - **数据备份**: `~/.qlib/backup/`
 - **下载的tar包**: `qlib/data/qlib_bin_YYYY-MM-DD.tar.gz`
-- **Dolt数据库**: `database/dolt-data/`
+- **Dolt数据库**: `database/dolt-data/`（如果使用Dolt）
+- **Supabase数据库**: 云端托管（如果使用Supabase）
 
 ## 数据源说明
 
@@ -537,16 +645,71 @@ bash qlib/update_from_github_release.sh -f qlib/data/qlib_bin_2025-12-11.tar.gz
 
 ### 模块结构
 
-- `src/config.py` - 数据库配置模块
-- `src/db.py` - 数据库连接和操作模块
-- `src/akshare_client.py` - AKShare数据获取客户端
+#### 核心模块 (`src/core/`)
+
+- **`config.py`** - 数据库配置模块（统一接口）
+  - 支持 Supabase (PostgreSQL) 和 Dolt (MySQL)
+  - 默认使用 Supabase
+  - 自动从环境变量读取配置
+
+- **`db.py`** - 数据库管理器（统一接口）
+  - 根据配置自动选择对应的数据库适配器
+  - 提供统一的数据库操作接口
+
+- **`db_adapters/`** - 数据库适配器模块
+  - `supabase_config.py` - Supabase 配置
+  - `supabase_connection.py` - Supabase 连接管理
+  - `dolt_config.py` - Dolt 配置
+  - `dolt_connection.py` - Dolt 连接管理
+  - `sql_adapter.py` - SQL 语法适配器（MySQL ↔ PostgreSQL）
+
+#### 客户端模块 (`src/clients/`)
+
+- **`akshare_client.py`** - AKShare数据获取客户端
   - `get_stock_income_statements()` - 获取所有报告期的利润表数据
   - `get_stock_financial_data()` - 获取最新一期财务数据
-- `src/stock_service.py` - 股票数据服务模块
-- `src/financial_service.py` - 财务数据服务模块
+
+- **`tushare_client.py`** - Tushare数据获取客户端
+
+#### 服务模块 (`src/services/`)
+
+- **`stock_service.py`** - 股票数据服务模块
+- **`akshare_daily_service.py`** - AKShare日线数据服务
+- **`tushare_daily_service.py`** - Tushare日线数据服务
+- **`etf_service.py`** - ETF基金服务
+- **`etf_daily_service.py`** - ETF日线服务
+- **`etf_net_value_service.py`** - ETF净值服务
+- **`industry_service.py`** - 行业数据服务
+- **`trading_calendar_service.py`** - 交易日历服务
+- **`market_value_service.py`** - 市值数据服务
+- **`shareholder_service.py`** - 股东数据服务
+- **`financial_service.py`** - 财务数据服务
   - `insert_income_statement()` - 插入利润表数据
-- `src/fetch_stocks.py` - 主程序：获取股票列表并存入数据库
-- `src/update_akshare_stock_data.py` - 更新股票扩展数据（公司信息、行业、股东、市值、财务等）
+- **`limit_service.py`** - 涨跌停查询服务
+
+- **`sql_queries/`** - SQL查询语句模块
+  - `sql_manager.py` - SQL管理器（根据数据库类型自动选择SQL）
+  - 每个服务都有对应的SQL文件，分别为 Dolt 和 Supabase 维护
+  - 支持 MySQL 和 PostgreSQL 语法差异的自动适配
+
+#### 脚本模块 (`src/scripts/`)
+
+- **`fetch_stocks.py`** - 获取股票列表并存入数据库
+- **`fetch_etfs.py`** - 获取ETF列表
+- **`update_akshare_daily.py`** - 更新AKShare日线数据
+- **`update_tushare_daily.py`** - 更新Tushare日线数据
+- **`update_akshare_stock_data.py`** - 更新股票扩展数据（公司信息、行业、股东、市值、财务等）
+- **`update_trading_calendar.py`** - 更新交易日历
+- **`update_etf_daily.py`** - 更新ETF日线数据
+- **`update_etf_net_value.py`** - 更新ETF净值数据
+- **`query_limit_stocks.py`** - 查询涨跌停股票
+
+### 架构特点
+
+1. **数据库适配器模式**: 支持多种数据库，通过适配器模式实现统一接口
+2. **SQL分离管理**: SQL语句独立管理，为不同数据库分别维护，便于维护和修改
+3. **自动语法适配**: 自动处理 MySQL 和 PostgreSQL 的语法差异（如 `ON DUPLICATE KEY UPDATE` ↔ `ON CONFLICT`）
+4. **模块化设计**: 清晰的模块划分，职责明确，易于扩展
 
 ## 开发计划
 

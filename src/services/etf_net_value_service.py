@@ -8,6 +8,8 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import etf_net_value_sql
 
 logger = logging.getLogger(__name__)
 
@@ -15,36 +17,12 @@ logger = logging.getLogger(__name__)
 class ETFNetValueService:
     """ETF 净值数据服务类"""
     
-    INSERT_NET_VALUE_SQL = """
-        INSERT INTO etf_net_value (code, net_value_date, unit_net_value, accumulated_net_value,
-                                   daily_growth_rate, subscription_status, redemption_status)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            unit_net_value = VALUES(unit_net_value),
-            accumulated_net_value = VALUES(accumulated_net_value),
-            daily_growth_rate = VALUES(daily_growth_rate),
-            subscription_status = VALUES(subscription_status),
-            redemption_status = VALUES(redemption_status),
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    SELECT_LATEST_DATE_SQL = """
-        SELECT MAX(net_value_date) as latest_date 
-        FROM etf_net_value 
-        WHERE code = %s
-    """
-    
-    SELECT_NET_VALUE_SQL = """
-        SELECT * FROM etf_net_value 
-        WHERE code = %s AND net_value_date >= %s AND net_value_date <= %s
-        ORDER BY net_value_date
-    """
-    
-    COUNT_NET_VALUE_SQL = """
-        SELECT COUNT(*) as count 
-        FROM etf_net_value 
-        WHERE code = %s
-    """
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_NET_VALUE_SQL = sql_manager.get_sql(etf_net_value_sql, 'INSERT_NET_VALUE')
+        self.SELECT_LATEST_DATE_SQL = sql_manager.get_sql(etf_net_value_sql, 'SELECT_LATEST_DATE')
+        self.SELECT_NET_VALUE_SQL = sql_manager.get_sql(etf_net_value_sql, 'SELECT_NET_VALUE')
+        self.COUNT_NET_VALUE_SQL = sql_manager.get_sql(etf_net_value_sql, 'COUNT_NET_VALUE')
     
     def insert_net_value(self, data: Dict[str, any]) -> bool:
         """

@@ -7,6 +7,8 @@ import logging
 from typing import List, Dict, Optional
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import industry_sql
 
 logger = logging.getLogger(__name__)
 
@@ -14,19 +16,10 @@ logger = logging.getLogger(__name__)
 class IndustryService:
     """行业数据服务类"""
     
-    INSERT_INDUSTRY_SQL = """
-        INSERT INTO stock_industry (code, industry_name, industry_code, concept, area, update_date)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            industry_name = VALUES(industry_name),
-            industry_code = VALUES(industry_code),
-            concept = VALUES(concept),
-            area = VALUES(area),
-            update_date = VALUES(update_date),
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    SELECT_INDUSTRY_SQL = "SELECT * FROM stock_industry WHERE code = %s"
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_INDUSTRY_SQL = sql_manager.get_sql(industry_sql, 'INSERT_INDUSTRY')
+        self.SELECT_INDUSTRY_SQL = sql_manager.get_sql(industry_sql, 'SELECT_INDUSTRY')
     
     def insert_industry(self, code: str, industry_name: Optional[str] = None,
                        industry_code: Optional[str] = None, concept: Optional[str] = None,

@@ -13,6 +13,8 @@ import pandas as pd
 
 import akshare as ak
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import akshare_daily_sql
 
 logger = logging.getLogger(__name__)
 
@@ -32,30 +34,10 @@ class DailyQuoteService:
     # 新浪API建议延迟 >= 2.0 秒以避免封IP
     DEFAULT_API_DELAY = 2.0
     
-    INSERT_DAILY_QUOTE_SQL = """
-        INSERT INTO stock_daily (
-            code, trade_date, open_price, high_price, low_price, 
-            close_price, volume, amount, outstanding_share, turnover
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            open_price = VALUES(open_price),
-            high_price = VALUES(high_price),
-            low_price = VALUES(low_price),
-            close_price = VALUES(close_price),
-            volume = VALUES(volume),
-            amount = VALUES(amount),
-            outstanding_share = VALUES(outstanding_share),
-            turnover = VALUES(turnover)
-    """
-    
-    SELECT_LATEST_DATE_SQL = """
-        SELECT MAX(trade_date) as latest_date 
-        FROM stock_daily 
-        WHERE code = %s
-    """
-    
     def __init__(self, api_delay: float = None):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_DAILY_QUOTE_SQL = sql_manager.get_sql(akshare_daily_sql, 'INSERT_DAILY_QUOTE')
+        self.SELECT_LATEST_DATE_SQL = sql_manager.get_sql(akshare_daily_sql, 'SELECT_LATEST_DATE')
         """
         初始化服务
         

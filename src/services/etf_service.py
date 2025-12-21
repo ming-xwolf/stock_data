@@ -7,6 +7,8 @@ import logging
 from typing import List, Dict, Optional
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import etf_sql
 
 logger = logging.getLogger(__name__)
 
@@ -14,27 +16,12 @@ logger = logging.getLogger(__name__)
 class ETFService:
     """ETF 基金数据服务类"""
     
-    INSERT_ETF_SQL = """
-        INSERT INTO etf_funds (code, name, fund_type, fund_company, listing_date, 
-                              tracking_index, management_fee, custodian_fee, exchange)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            fund_type = VALUES(fund_type),
-            fund_company = VALUES(fund_company),
-            listing_date = VALUES(listing_date),
-            tracking_index = VALUES(tracking_index),
-            management_fee = VALUES(management_fee),
-            custodian_fee = VALUES(custodian_fee),
-            exchange = VALUES(exchange),
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    SELECT_ETF_SQL = "SELECT * FROM etf_funds WHERE code = %s"
-    
-    SELECT_ALL_ETFS_SQL = "SELECT * FROM etf_funds ORDER BY code"
-    
-    COUNT_ETFS_SQL = "SELECT COUNT(*) as count FROM etf_funds"
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_ETF_SQL = sql_manager.get_sql(etf_sql, 'INSERT_ETF')
+        self.SELECT_ETF_SQL = sql_manager.get_sql(etf_sql, 'SELECT_ETF')
+        self.SELECT_ALL_ETFS_SQL = sql_manager.get_sql(etf_sql, 'SELECT_ALL_ETFS')
+        self.COUNT_ETFS_SQL = sql_manager.get_sql(etf_sql, 'COUNT_ETFS')
     
     def insert_etf(self, code: str, name: str, exchange: str,
                    fund_type: Optional[str] = None,

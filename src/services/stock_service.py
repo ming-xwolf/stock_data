@@ -7,6 +7,8 @@ import logging
 from typing import List, Dict, Optional
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import stock_sql
 
 logger = logging.getLogger(__name__)
 
@@ -14,31 +16,13 @@ logger = logging.getLogger(__name__)
 class StockService:
     """股票数据服务类"""
     
-    INSERT_STOCK_SQL = """
-        INSERT INTO stocks (code, name, market, list_date)
-        VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            market = VALUES(market),
-            list_date = VALUES(list_date),
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    UPDATE_COMPANY_INFO_SQL = """
-        UPDATE stocks 
-        SET company_type = %s,
-            actual_controller = %s,
-            direct_controller = %s,
-            main_business = %s,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE code = %s
-    """
-    
-    SELECT_STOCK_SQL = "SELECT * FROM stocks WHERE code = %s"
-    
-    SELECT_ALL_STOCKS_SQL = "SELECT * FROM stocks ORDER BY code"
-    
-    COUNT_STOCKS_SQL = "SELECT COUNT(*) as count FROM stocks"
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_STOCK_SQL = sql_manager.get_sql(stock_sql, 'INSERT_STOCK')
+        self.UPDATE_COMPANY_INFO_SQL = sql_manager.get_sql(stock_sql, 'UPDATE_COMPANY_INFO')
+        self.SELECT_STOCK_SQL = sql_manager.get_sql(stock_sql, 'SELECT_STOCK')
+        self.SELECT_ALL_STOCKS_SQL = sql_manager.get_sql(stock_sql, 'SELECT_ALL_STOCKS')
+        self.COUNT_STOCKS_SQL = sql_manager.get_sql(stock_sql, 'COUNT_STOCKS')
     
     def insert_stock(self, code: str, name: str, market: str, 
                      list_date: Optional[str] = None) -> bool:

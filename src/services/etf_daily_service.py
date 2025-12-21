@@ -8,6 +8,8 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import etf_daily_sql
 
 logger = logging.getLogger(__name__)
 
@@ -15,39 +17,13 @@ logger = logging.getLogger(__name__)
 class ETFDailyService:
     """ETF 日线行情数据服务类"""
     
-    INSERT_DAILY_SQL = """
-        INSERT INTO etf_daily (code, trade_date, open_price, high_price, low_price, 
-                              close_price, volume, amount, change_amount, change_rate, turnover)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            open_price = VALUES(open_price),
-            high_price = VALUES(high_price),
-            low_price = VALUES(low_price),
-            close_price = VALUES(close_price),
-            volume = VALUES(volume),
-            amount = VALUES(amount),
-            change_amount = VALUES(change_amount),
-            change_rate = VALUES(change_rate),
-            turnover = VALUES(turnover)
-    """
-    
-    SELECT_LATEST_DATE_SQL = """
-        SELECT MAX(trade_date) as latest_date 
-        FROM etf_daily 
-        WHERE code = %s
-    """
-    
-    SELECT_DAILY_DATA_SQL = """
-        SELECT * FROM etf_daily 
-        WHERE code = %s AND trade_date >= %s AND trade_date <= %s
-        ORDER BY trade_date
-    """
-    
-    COUNT_DAILY_SQL = """
-        SELECT COUNT(*) as count 
-        FROM etf_daily 
-        WHERE code = %s
-    """
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_DAILY_SQL = sql_manager.get_sql(etf_daily_sql, 'INSERT_DAILY')
+        self.SELECT_LATEST_DATE_SQL = sql_manager.get_sql(etf_daily_sql, 'SELECT_LATEST_DATE')
+        self.SELECT_DAILY_DATA_SQL = sql_manager.get_sql(etf_daily_sql, 'SELECT_DAILY_DATA')
+        self.COUNT_DAILY_SQL = sql_manager.get_sql(etf_daily_sql, 'COUNT_DAILY')
+        self.SELECT_EXISTING_DATES_SQL = sql_manager.get_sql(etf_daily_sql, 'SELECT_EXISTING_DATES')
     
     def insert_daily_data(self, data: Dict[str, any]) -> bool:
         """
@@ -122,8 +98,42 @@ class ETFDailyService:
             return affected_rows
             
         except Exception as e:
-            logger.error(f"批量插入日线数据失败: {e}", exc_info=True)
-            raise
+            # 如果批量插入失败，尝试逐条插入以定位问题
+            error_msg = str(e)
+            if 'duplicate key' in error_msg.lower() or 'unique constraint' in error_msg.lower():
+                logger.warning(f"批量插入遇到冲突，尝试逐条插入以定位问题: {error_msg}")
+                return self._insert_one_by_one(data_list)
+            else:
+                logger.error(f"批量插入日线数据失败: {e}", exc_info=True)
+                raise
+    
+    def _insert_one_by_one(self, data_list: List[Dict[str, any]]) -> int:
+        """
+        逐条插入数据（用于调试和错误恢复）
+        
+        Args:
+            data_list: 日线数据列表
+            
+        Returns:
+            成功插入/更新的数据条数
+        """
+        success_count = 0
+        failed_count = 0
+        
+        for i, data in enumerate(data_list):
+            try:
+                self.insert_daily_data(data)
+                success_count += 1
+            except Exception as e:
+                failed_count += 1
+                logger.warning(f"插入第 {i+1} 条数据失败 (code={data.get('code')}, date={data.get('trade_date')}): {e}")
+        
+        if failed_count > 0:
+            logger.warning(f"逐条插入完成: 成功 {success_count} 条，失败 {failed_count} 条")
+        else:
+            logger.info(f"逐条插入完成: 成功 {success_count} 条")
+        
+        return success_count
     
     def get_latest_date(self, code: str) -> Optional[str]:
         """
@@ -187,3 +197,106 @@ class ETFDailyService:
         except Exception as e:
             logger.error(f"统计 ETF {code} 日线数据失败: {e}")
             return 0
+    
+    def get_existing_dates(self, code: str, start_date: str, end_date: str) -> set:
+        """
+        获取指定 ETF 在指定日期范围内已存在的交易日期
+        
+        Args:
+            code: ETF 代码
+            start_date: 开始日期（YYYY-MM-DD格式）
+            end_date: 结束日期（YYYY-MM-DD格式）
+            
+        Returns:
+            已存在的日期集合（字符串格式：YYYY-MM-DD）
+        """
+        try:
+            results = db_manager.execute_query(
+                self.SELECT_EXISTING_DATES_SQL,
+                (code, start_date, end_date)
+            )
+            existing_dates = set()
+            for row in results:
+                trade_date = row['trade_date']
+                # 转换为字符串格式
+                if isinstance(trade_date, datetime):
+                    existing_dates.add(trade_date.strftime('%Y-%m-%d'))
+                else:
+                    existing_dates.add(str(trade_date))
+            return existing_dates
+        except Exception as e:
+            logger.error(f"查询 ETF {code} 已存在日期失败: {e}")
+            return set()
+    
+    def batch_insert_daily_data_filtered(self, data_list: List[Dict[str, any]], 
+                                         check_existing: bool = True) -> int:
+        """
+        批量插入或更新日线数据（自动过滤已存在的数据）
+        
+        Args:
+            data_list: 日线数据列表
+            check_existing: 是否检查已存在的数据（默认True）
+            
+        Returns:
+            成功插入/更新的数据条数
+        """
+        if not data_list:
+            return 0
+        
+        # 第一步：去除数据列表中的重复项（基于 code 和 trade_date）
+        seen = set()
+        unique_data_list = []
+        for data in data_list:
+            # 统一日期格式为字符串（YYYY-MM-DD）
+            trade_date = data['trade_date']
+            if isinstance(trade_date, datetime):
+                trade_date_str = trade_date.strftime('%Y-%m-%d')
+            else:
+                trade_date_str = str(trade_date)
+            
+            # 创建唯一标识
+            key = (data['code'], trade_date_str)
+            if key not in seen:
+                seen.add(key)
+                # 确保 trade_date 是字符串格式
+                data_copy = data.copy()
+                data_copy['trade_date'] = trade_date_str
+                unique_data_list.append(data_copy)
+        
+        if len(unique_data_list) < len(data_list):
+            logger.info(f"去除了 {len(data_list) - len(unique_data_list)} 条重复数据")
+        
+        data_list = unique_data_list
+        
+        # 如果启用检查，先过滤掉已存在的数据
+        if check_existing and data_list:
+            # 获取第一只ETF的代码（假设列表中所有数据的code相同）
+            code = data_list[0]['code']
+            
+            # 找到日期范围（确保是字符串格式）
+            dates = [data['trade_date'] for data in data_list]
+            start_date = min(dates)
+            end_date = max(dates)
+            
+            # 查询已存在的日期
+            existing_dates = self.get_existing_dates(code, start_date, end_date)
+            
+            if existing_dates:
+                logger.info(f"ETF {code} 在 {start_date} 到 {end_date} 范围内已有 {len(existing_dates)} 个日期，将过滤这些日期")
+                # 过滤掉已存在的数据
+                original_count = len(data_list)
+                data_list = [
+                    data for data in data_list 
+                    if data['trade_date'] not in existing_dates
+                ]
+                filtered_count = original_count - len(data_list)
+                if filtered_count > 0:
+                    logger.info(f"已过滤 {filtered_count} 条已存在的数据，剩余 {len(data_list)} 条新数据")
+            
+            # 如果没有新数据，直接返回
+            if not data_list:
+                logger.info(f"ETF {code} 所有数据已存在，无需插入")
+                return 0
+        
+        # 调用原有的批量插入方法
+        return self.batch_insert_daily_data(data_list)

@@ -8,6 +8,8 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from ..core.db import db_manager
+from .sql_queries import sql_manager
+from .sql_queries import market_value_sql
 
 logger = logging.getLogger(__name__)
 
@@ -15,27 +17,10 @@ logger = logging.getLogger(__name__)
 class MarketValueService:
     """市值数据服务类"""
     
-    INSERT_MARKET_VALUE_SQL = """
-        INSERT INTO stock_market_value (
-            code, total_shares, circulating_shares, total_market_cap,
-            circulating_market_cap, price, update_date
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            total_shares = VALUES(total_shares),
-            circulating_shares = VALUES(circulating_shares),
-            total_market_cap = VALUES(total_market_cap),
-            circulating_market_cap = VALUES(circulating_market_cap),
-            price = VALUES(price),
-            updated_at = CURRENT_TIMESTAMP
-    """
-    
-    SELECT_MARKET_VALUE_SQL = """
-        SELECT * FROM stock_market_value 
-        WHERE code = %s 
-        ORDER BY update_date DESC 
-        LIMIT 1
-    """
+    def __init__(self):
+        """初始化服务，加载 SQL 语句"""
+        self.INSERT_MARKET_VALUE_SQL = sql_manager.get_sql(market_value_sql, 'INSERT_MARKET_VALUE')
+        self.SELECT_MARKET_VALUE_SQL = sql_manager.get_sql(market_value_sql, 'SELECT_MARKET_VALUE')
     
     def insert_market_value(self, code: str, total_shares: Optional[int] = None,
                            circulating_shares: Optional[int] = None,

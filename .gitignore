@@ -204,6 +204,7 @@ $RECYCLE.BIN/
 # 测试输出
 test_output/
 test_results/
+generated_charts/
 .pytest_cache/
 
 # 缓存文件

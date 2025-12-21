@@ -2,26 +2,15 @@
 股票K线图绘制工具
 支持MACD和BOLL指标的可视化
 
-Author: Charmve yidazhang1@gmail.com
-Date: 2023-03-24 10:25:21
-LastEditors: Charmve yidazhang1@gmail.com
-LastEditTime: 2024-12-10
-Version: 2.0.0
-Blogs: charmve.blog.csdn.net
-GitHub: https://github.com/Charmve
-
-Copyright (c) 2023 by Charmve, All Rights Reserved.
-Licensed under the MIT License.
-
-Modified: 2025-01-XX
-- 将数据源替换为 Supabase
-- 重构为类结构
 """
 
 import os
 import sys
 from datetime import datetime
 from typing import Literal, Optional, Tuple
+
+# 支持的图片格式
+ImageFormat = Literal["png", "svg"]
 
 # 添加项目路径以便导入模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -44,6 +33,7 @@ DEFAULT_CHART_DIR = "generated_charts"  # 默认图表保存目录
 DEFAULT_DPI = 150  # 默认图片分辨率
 DEFAULT_FIGSIZE = (20, 12)  # 默认图表尺寸（增加高度以便MACD更清晰）
 DEFAULT_PERIOD = "D"  # 默认周期（日线）
+DEFAULT_FORMAT: ImageFormat = "png"  # 默认图片格式
 
 
 class StockChartGenerator:
@@ -54,20 +44,23 @@ class StockChartGenerator:
         chart_dir: str = None,
         dpi: int = DEFAULT_DPI,
         figsize: Tuple[int, int] = DEFAULT_FIGSIZE,
+        image_format: ImageFormat = DEFAULT_FORMAT,
     ):
         """
         初始化股票图表生成器
         
         Args:
             chart_dir: 图表保存目录，如果为None则使用默认目录
-            dpi: 图片分辨率
+            dpi: 图片分辨率（仅对PNG格式有效，SVG为矢量格式不需要DPI）
             figsize: 图表尺寸
+            image_format: 图片格式，可选 'png' 或 'svg'（默认: 'png'）
         """
         self.chart_dir = chart_dir or os.path.join(
             os.path.dirname(__file__), "..", "..", DEFAULT_CHART_DIR
         )
         self.dpi = dpi
         self.figsize = figsize
+        self.image_format = image_format
         
         # 配置中文字体
         self.chinese_font_prop = self._setup_chinese_font()
@@ -552,7 +545,14 @@ class StockChartGenerator:
         self._apply_chinese_fonts(fig, axes_list)
 
         # 保存图片
-        fig.savefig(filepath, dpi=self.dpi, bbox_inches="tight")
+        # SVG是矢量格式，不需要DPI参数
+        save_kwargs = {"bbox_inches": "tight"}
+        if self.image_format == "svg":
+            save_kwargs["format"] = "svg"
+        else:
+            save_kwargs["dpi"] = self.dpi
+        
+        fig.savefig(filepath, **save_kwargs)
         plt.close(fig)
 
     def generate_filename(
@@ -562,6 +562,7 @@ class StockChartGenerator:
         end_date: str,
         period: PeriodType = "D",
         data_source: str = "supabase",
+        image_format: Optional[ImageFormat] = None,
     ) -> str:
         """
         生成图表文件名和路径
@@ -572,6 +573,7 @@ class StockChartGenerator:
             end_date: 结束日期
             period: 周期类型
             data_source: 数据源，默认 'supabase'
+            image_format: 图片格式，如果为None则使用实例的默认格式
 
         Returns:
             str: 完整的文件路径
@@ -580,7 +582,8 @@ class StockChartGenerator:
         start_date_str = start_date.replace("-", "")
         end_date_str = end_date.replace("-", "")
         period_name = PERIOD_NAMES.get(period, period)
-        filename = f"{stock_code}_{start_date_str}_{end_date_str}_{period_name}_{data_source}_MACD_BOLL.png"
+        format_ext = (image_format or self.image_format).lower()
+        filename = f"{stock_code}_{start_date_str}_{end_date_str}_{period_name}_{data_source}_MACD_BOLL.{format_ext}"
         return os.path.join(self.chart_dir, filename)
 
     def generate(
@@ -589,6 +592,7 @@ class StockChartGenerator:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         period: PeriodType = DEFAULT_PERIOD,
+        image_format: Optional[ImageFormat] = None,
     ) -> str:
         """
         生成股票K线图
@@ -598,6 +602,7 @@ class StockChartGenerator:
             start_date: 开始日期 (YYYY-MM-DD)，如果为None则使用该股票的最早交易日期
             end_date: 结束日期 (YYYY-MM-DD)，如果为None则使用该股票的最新交易日期
             period: 周期类型，可选值：'D'（日线）、'W'（周线）、'M'（月线）、'Q'（季线）、'Y'（年线）
+            image_format: 图片格式，可选 'png' 或 'svg'，如果为None则使用实例的默认格式
 
         Returns:
             str: 保存的图表文件路径
@@ -657,12 +662,14 @@ class StockChartGenerator:
         else:
             display_name = stock_code
 
-        # 生成文件名
+        # 生成文件名（如果指定了格式，使用指定的格式，否则使用实例的默认格式）
+        output_format = image_format or self.image_format
         filepath = self.generate_filename(
             stock_code,
             start_date,
             end_date,
-            period
+            period,
+            image_format=output_format
         )
 
         # 生成标题
@@ -670,10 +677,19 @@ class StockChartGenerator:
             f"{display_name}从{start_date}至{end_date}的{period_name}行情数据"
         )
 
-        # 绘制图表
-        self._plot_stock_chart(
-            plot_data, add_plots, title, filepath
-        )
+        # 临时设置输出格式（如果指定了格式参数）
+        original_format = self.image_format
+        if image_format:
+            self.image_format = image_format
+        
+        try:
+            # 绘制图表
+            self._plot_stock_chart(
+                plot_data, add_plots, title, filepath
+            )
+        finally:
+            # 恢复原始格式
+            self.image_format = original_format
 
         print(f"图表已保存到: {filepath}")
         return filepath

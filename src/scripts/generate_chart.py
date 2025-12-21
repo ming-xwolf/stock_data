@@ -73,19 +73,27 @@ def main():
         default="supabase",
         help="数据源：supabase=Supabase数据库（默认: supabase）",
     )
+    parser.add_argument(
+        "--format",
+        type=str,
+        choices=["png", "svg"],
+        default="png",
+        help="图片格式：png=PNG位图格式, svg=SVG矢量格式（默认: png）",
+    )
 
     args = parser.parse_args()
 
     try:
         # 创建图表生成器实例
-        generator = StockChartGenerator()
+        generator = StockChartGenerator(image_format=args.format)
         
         # 生成图表
         filepath = generator.generate(
             stock_code=args.code,
             start_date=args.start,
             end_date=args.end,
-            period=args.period
+            period=args.period,
+            image_format=args.format
         )
         logger.info(f"图表生成成功: {filepath}")
     except Exception as e:
